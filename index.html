@@ -1,0 +1,1909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vinyl — A Local-First Record Player</title>
+<meta name="description" content="A tactile, customizable vinyl-inspired music player that plays audio files locally in your browser.">
+<meta name="theme-color" content="#09090a">
+<meta name="color-scheme" content="dark light">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,400&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#09090a;--surface:#111113;--border:rgba(255,255,255,0.055);
+  --text:#edeae4;--text2:#888480;--text3:#3a3835;--groove:rgba(255,255,255,0.022);
+  --accent:#edeae4;--accent-text:#09090a;
+}
+:root[data-theme="light"]{
+  --bg:#f3f1ed;--surface:#ffffff;--border:rgba(0,0,0,0.07);
+  --text:#1c1a17;--text2:#75716b;--text3:#bcb6ac;--groove:rgba(0,0,0,0.025);
+}
+html,body{height:100%;width:100%;font-family:'Courier Prime',monospace;background:var(--bg);color:var(--text);overflow:hidden;font-size:13px;transition:background 0.4s ease,color 0.4s ease}
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23f)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:9000}
+
+.layout{display:grid;grid-template-columns:1fr 310px;height:100vh;max-width:1020px;margin:0 auto}
+
+/* STAGE */
+.stage{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;position:relative;overflow:hidden}
+.bg-scene{position:absolute;inset:0;z-index:-1;opacity:0;transition:opacity 0.7s ease;pointer-events:none}
+.bg-scene.active{opacity:1}
+.bg-scene svg{width:100%;height:100%;display:block}
+.bg-glow{position:absolute;width:460px;height:460px;border-radius:50%;background:radial-gradient(circle,rgba(30,30,50,0.6) 0%,transparent 70%);transition:background 2s ease;pointer-events:none;z-index:0}
+.turntable{position:relative;width:340px;height:340px;z-index:1;flex-shrink:0}
+
+/* DISC */
+.disc-wrap{position:absolute;width:302px;height:302px;top:19px;left:9px}
+.disc{width:100%;height:100%;border-radius:50%;position:relative;animation:spin 2.8s linear infinite;animation-play-state:paused;will-change:transform}
+.disc.playing{animation-play-state:running}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes wfPulse{
+  0%,100%{height:4px}
+  50%{height:var(--wf-h,28px)}
+}
+.disc-vinyl{position:absolute;inset:0;border-radius:50%;overflow:hidden;background:radial-gradient(circle at 40% 33%,#242432 0%,#131320 28%,#0c0c14 55%,#131320 80%,#242432 100%);box-shadow:0 24px 72px rgba(0,0,0,0.8),0 4px 16px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.055);transition:background 1.5s ease}
+.disc-vinyl::before{content:'';position:absolute;inset:0;border-radius:50%;background:repeating-radial-gradient(circle at center,transparent 0,transparent 5px,var(--groove) 5px,var(--groove) 6.2px)}
+.disc-vinyl::after{content:'';position:absolute;inset:-40%;border-radius:50%;background:linear-gradient(130deg,transparent 37%,rgba(255,255,255,0.035) 46%,rgba(255,255,255,0.08) 50%,rgba(255,255,255,0.035) 54%,transparent 63%);pointer-events:none}
+.disc-label{position:absolute;width:34%;height:34%;top:50%;left:50%;transform:translate(-50%,-50%);border-radius:50%;overflow:hidden;z-index:2;background:#09090a;box-shadow:0 0 0 2px rgba(255,255,255,0.055),0 0 0 6px rgba(255,255,255,0.018),0 6px 28px rgba(0,0,0,0.65);transition:box-shadow 1.2s ease}
+.disc-label img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
+.disc-label-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:26px;color:rgba(255,255,255,0.06);background:radial-gradient(circle,#161620,#09090a)}
+.spindle{position:absolute;width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.08);top:50%;left:50%;transform:translate(-50%,-50%);z-index:3}
+
+/* DISC ART SKIN — painted overlay layer */
+.disc-skin{position:absolute;inset:0;border-radius:50%;pointer-events:none;z-index:1;opacity:0;transition:opacity 0.5s ease}
+.disc-skin.active{opacity:1}
+.disc-skin svg{width:100%;height:100%;display:block}
+
+/* TONEARM */
+.arm{position:absolute;top:0;right:2px;width:106px;height:240px;transform-origin:77px 23px;transform:rotate(-26deg);transition:transform 1.1s cubic-bezier(0.35,0,0.2,1);z-index:10}
+.arm.down{transform:rotate(1.5deg)}
+.arm-pivot{position:absolute;width:36px;height:36px;top:5px;right:5px;border-radius:50%;background:radial-gradient(circle at 38% 32%,#383838,#181818);box-shadow:0 4px 14px rgba(0,0,0,0.65),inset 0 1px 0 rgba(255,255,255,0.09),0 0 0 1px rgba(255,255,255,0.04);z-index:11}
+.arm-pivot::after{content:'';position:absolute;width:8px;height:8px;border-radius:50%;background:radial-gradient(circle at 38% 38%,#444,#252525);top:50%;left:50%;transform:translate(-50%,-50%)}
+.arm-shaft{position:absolute;width:4px;height:185px;top:23px;right:25px;background:linear-gradient(to right,#232323,#424242,#1e1e1e);border-radius:3px;box-shadow:1px 2px 10px rgba(0,0,0,0.55)}
+.arm-head{position:absolute;bottom:0;left:50%;transform:translateX(-50%) rotate(-19deg);width:15px;height:26px;background:linear-gradient(135deg,#313131,#1a1a1a);border-radius:3px 3px 5px 5px;box-shadow:1px 2px 10px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.055)}
+.arm-needle{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);width:1.5px;height:11px;background:linear-gradient(to bottom,#3a3a3a,#aaa);border-radius:0 0 1px 1px}
+
+/* INFO */
+.stage-info{z-index:1;margin-top:26px;text-align:center;width:100%;max-width:340px}
+.s-track{font-family:'Cormorant Garamond',serif;font-size:21px;font-weight:400;line-height:1.2;color:var(--text);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.s-artist{font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* CLOCK */
+.stage-clock{
+  position:absolute;bottom:18px;left:18px;z-index:5;
+  font-family:'Courier Prime',monospace;
+  display:flex;flex-direction:column;gap:2px;
+}
+.clock-time{font-size:20px;letter-spacing:0.02em;color:var(--text);font-weight:700;line-height:1}
+.clock-date{font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text3)}
+.waveform{
+  display:flex;align-items:center;justify-content:center;
+  gap:3px;height:36px;margin-top:16px;
+}
+.wf-bar{
+  width:2.5px;border-radius:2px;
+  background:var(--wf-color,var(--text));
+  opacity:0.85;
+  height:4px;
+  transition:background 1.2s ease,height 0.18s ease;
+}
+.waveform.playing .wf-bar{animation:wfPulse 1.1s ease-in-out infinite;}
+
+/* PROGRESS */
+.s-prog{margin-top:20px;width:100%;opacity:0.2;pointer-events:none;transition:opacity 0.4s}
+.s-prog.active{opacity:1;pointer-events:auto}
+.pbar{width:100%;height:2px;background:rgba(255,255,255,0.07);border-radius:2px;cursor:pointer;position:relative;margin-bottom:6px}
+.pfill{height:100%;border-radius:2px;background:var(--accent);width:0%;position:relative;transition:width 0.15s linear}
+.pfill::after{content:'';position:absolute;right:-5px;top:50%;transform:translateY(-50%);width:9px;height:9px;border-radius:50%;background:var(--accent);opacity:0;transition:opacity 0.15s}
+.pbar:hover .pfill::after{opacity:1}
+.ptimes{display:flex;justify-content:space-between;font-size:10px;color:var(--text3);letter-spacing:0.06em}
+
+/* CONTROLS */
+.s-ctl{display:flex;align-items:center;justify-content:center;gap:2px;margin-top:16px}
+.btn{background:none;border:none;cursor:pointer;color:var(--text3);padding:8px;border-radius:8px;font-size:14px;display:flex;align-items:center;justify-content:center;transition:color 0.12s,background 0.12s;line-height:1}
+.btn:hover{color:var(--text);background:rgba(255,255,255,0.04)}
+.btn.on{color:var(--accent)}
+.btn:disabled{opacity:0.15;cursor:default;pointer-events:none}
+.btn-play{width:44px;height:44px;border-radius:50%;background:var(--accent);color:var(--accent-text);font-size:15px;margin:0 8px}
+.btn-play:hover{opacity:0.86;background:var(--accent);color:var(--accent-text)}
+
+/* VOLUME */
+.s-vol{display:flex;align-items:center;gap:9px;margin-top:15px;width:100%;max-width:200px}
+.vi{font-size:12px;color:var(--text3);flex-shrink:0;user-select:none;cursor:default}
+.vbar{flex:1;height:2px;background:rgba(255,255,255,0.07);border-radius:2px;cursor:pointer;position:relative;user-select:none}
+.vfill{height:100%;border-radius:2px;background:var(--accent);pointer-events:none}
+.vthumb{position:absolute;width:10px;height:10px;border-radius:50%;background:var(--accent);top:50%;transform:translate(-50%,-50%);pointer-events:none;transition:transform 0.1s}
+.vbar:hover .vthumb{transform:translate(-50%,-50%) scale(1.3)}
+
+/* SIDEBAR */
+.sidebar{background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+
+/* upload area */
+.upload-area{padding:20px 18px 15px;border-bottom:1px solid var(--border);flex-shrink:0}
+.upload-lbl{font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text3);margin-bottom:10px}
+
+.drop-zone{
+  border:1.5px dashed var(--border);border-radius:10px;
+  padding:20px 14px;text-align:center;cursor:pointer;
+  transition:border-color 0.2s,background 0.2s;
+  position:relative;
+}
+.drop-zone:hover,.drop-zone.dragover{border-color:rgba(255,255,255,0.25);background:rgba(255,255,255,0.025)}
+.drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop-icon{font-size:20px;color:var(--text3);margin-bottom:6px}
+.drop-text{font-size:10.5px;color:var(--text2);line-height:1.5}
+.drop-sub{font-size:9px;color:var(--text3);margin-top:3px}
+
+/* STATUS */
+.status{padding:5px 18px;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border);min-height:24px;flex-shrink:0;display:flex;align-items:center;gap:5px}
+.sdot{width:4px;height:4px;border-radius:50%;background:var(--text3);flex-shrink:0;transition:background 0.3s}
+.status.live .sdot{background:#4caf50;animation:blink 1.2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.25}}
+
+/* RESULTS / PLAYLIST */
+.rlist{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#1c1c1c transparent}
+.rlist::-webkit-scrollbar{width:3px}
+.rlist::-webkit-scrollbar-thumb{background:#1c1c1c;border-radius:2px}
+.rhdr{padding:12px 18px 5px;font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text3);display:flex;justify-content:space-between;align-items:center}
+.rhdr-clear{cursor:pointer;color:var(--text3);transition:color 0.15s;font-size:9px;letter-spacing:0.05em}
+.rhdr-clear:hover{color:var(--text)}
+.rrow{display:flex;align-items:center;gap:9px;padding:7px 18px;cursor:pointer;transition:background 0.1s;position:relative}
+.rrow:hover{background:rgba(255,255,255,0.025)}
+.rrow.active{background:rgba(255,255,255,0.035)}
+.rrow.active::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--accent)}
+.rnum{font-size:9px;color:var(--text3);width:13px;text-align:right;flex-shrink:0}
+.rrow.active .rnum{color:var(--text2)}
+.rthumb{width:38px;height:38px;border-radius:3px;object-fit:cover;flex-shrink:0;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--text3)}
+.rmeta{flex:1;min-width:0}
+.rname{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);margin-bottom:2px}
+.rsub{font-size:9.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rplay{font-size:10px;color:var(--text3);opacity:0;transition:opacity 0.1s;flex-shrink:0}
+.rrow:hover .rplay{opacity:1}
+.rrow.active .rplay{opacity:0}
+.rremove{font-size:11px;color:var(--text3);opacity:0;transition:opacity 0.1s,color 0.1s;flex-shrink:0;padding:3px;cursor:pointer}
+.rrow:hover .rremove{opacity:0.6}
+.rremove:hover{opacity:1 !important;color:#e05;}
+
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:200px;gap:8px;color:var(--text3);font-size:10px;letter-spacing:0.08em;text-align:center;padding:20px;text-transform:uppercase}
+.esym{font-size:26px;opacity:0.12;margin-bottom:4px}
+
+/* FOOTER */
+.foot{padding:9px 18px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0}
+.foot span{font-size:9px;letter-spacing:0.09em;text-transform:uppercase;color:var(--text3)}
+
+/* SETTINGS TOGGLE */
+.settings-toggle{
+  position:absolute;top:18px;right:18px;z-index:20;
+  width:32px;height:32px;border-radius:50%;
+  background:rgba(255,255,255,0.04);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:var(--text2);font-size:14px;
+  transition:background 0.15s,color 0.15s,transform 0.3s;
+}
+.settings-toggle:hover{color:var(--text);background:rgba(255,255,255,0.08)}
+.settings-toggle.open{transform:rotate(50deg);color:var(--text)}
+
+/* SETTINGS PANEL */
+.settings-panel{
+  position:absolute;top:58px;right:18px;z-index:21;
+  width:260px;
+  max-height:calc(100vh - 90px);
+  overflow-y:auto;
+  scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.15) transparent;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:18px;
+  box-shadow:0 16px 50px rgba(0,0,0,0.4);
+  opacity:0;transform:translateY(-8px) scale(0.97);
+  pointer-events:none;
+  transition:opacity 0.18s ease,transform 0.18s ease;
+}
+.settings-panel::-webkit-scrollbar{width:4px}
+.settings-panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:2px}
+.settings-panel.open{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
+
+.settings-section{margin-bottom:16px}
+.settings-section:last-child{margin-bottom:0}
+.settings-title{font-size:9px;letter-spacing:0.16em;text-transform:uppercase;color:var(--text3);margin-bottom:10px}
+
+/* mode toggle (auto vs custom) */
+.mode-toggle{display:flex;gap:6px;margin-bottom:10px}
+.mode-btn{
+  flex:1;padding:7px 0;border-radius:7px;border:1px solid var(--border);
+  background:transparent;color:var(--text2);font-family:'Courier Prime',monospace;
+  font-size:10px;letter-spacing:0.04em;cursor:pointer;transition:all 0.15s;
+}
+.mode-btn.active{background:var(--text);color:var(--bg);border-color:var(--text)}
+.mode-btn:hover:not(.active){border-color:rgba(255,255,255,0.2);color:var(--text)}
+
+/* color swatches */
+.swatch-row{display:flex;gap:8px;flex-wrap:wrap}
+.swatch{
+  width:26px;height:26px;border-radius:50%;cursor:pointer;
+  border:2px solid transparent;transition:transform 0.12s,border-color 0.12s;
+  position:relative;flex-shrink:0;
+}
+.swatch:hover{transform:scale(1.12)}
+.swatch.selected{border-color:var(--text)}
+.swatch.selected::after{
+  content:'✓';position:absolute;inset:0;display:flex;
+  align-items:center;justify-content:center;font-size:10px;
+  color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.5);
+}
+.swatch-custom{
+  width:26px;height:26px;border-radius:50%;cursor:pointer;flex-shrink:0;
+  border:1px dashed var(--border);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--text3);
+  position:relative;overflow:hidden;
+}
+.swatch-custom input{position:absolute;inset:-4px;opacity:0;cursor:pointer;width:calc(100% + 8px);height:calc(100% + 8px)}
+
+/* theme toggle */
+.theme-toggle{display:flex;gap:6px}
+.theme-btn{
+  flex:1;padding:9px 0;border-radius:7px;border:1px solid var(--border);
+  background:transparent;color:var(--text2);font-family:'Courier Prime',monospace;
+  font-size:10px;letter-spacing:0.04em;cursor:pointer;transition:all 0.15s;
+  display:flex;align-items:center;justify-content:center;gap:5px;
+}
+.theme-btn.active{background:var(--text);color:var(--bg);border-color:var(--text)}
+.theme-btn:hover:not(.active){border-color:rgba(255,255,255,0.2);color:var(--text)}
+
+.settings-reset{
+  width:100%;margin-top:4px;padding:8px 0;border-radius:7px;
+  background:transparent;border:1px solid var(--border);
+  color:var(--text3);font-family:'Courier Prime',monospace;font-size:9.5px;
+  letter-spacing:0.06em;cursor:pointer;transition:all 0.15s;text-transform:uppercase;
+}
+.settings-reset:hover{color:var(--text);border-color:rgba(255,255,255,0.2)}
+
+/* disc skin picker */
+.skin-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.skin-thumb{
+  aspect-ratio:1;border-radius:50%;cursor:pointer;
+  border:2px solid transparent;overflow:hidden;position:relative;
+  background:#161616;transition:transform 0.12s,border-color 0.12s;
+}
+.skin-thumb:hover{transform:scale(1.08)}
+.skin-thumb.selected{border-color:var(--accent)}
+.skin-thumb svg{width:100%;height:100%;display:block}
+.skin-thumb-none{
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;color:var(--text3);background:#161616;
+  letter-spacing:0.02em;text-align:center;line-height:1.3;
+}
+
+/* RESPONSIVE LAYOUT */
+@media (max-width: 760px) {
+  html, body { min-height: 100%; height: auto; overflow-x: hidden; overflow-y: auto; }
+  .layout { display: flex; flex-direction: column; height: auto; min-height: 100dvh; max-width: 100%; }
+  .stage { min-height: 690px; padding: 72px 20px 58px; }
+  .turntable { width: min(340px, 82vw); height: min(340px, 82vw); }
+  .disc-wrap { width: calc(100% - 38px); height: calc(100% - 38px); top: 5.6%; left: 2.6%; }
+  .arm { transform: scale(.86) rotate(-26deg); transform-origin: 77px 23px; right: -5px; }
+  .arm.down { transform: scale(.86) rotate(1.5deg); }
+  .stage-info { margin-top: 22px; max-width: min(340px, 88vw); }
+  .sidebar { min-height: 320px; max-height: 60vh; border-left: 0; border-top: 1px solid var(--border); }
+  .rlist { min-height: 150px; }
+  .settings-panel { position: fixed; top: 58px; right: 12px; width: min(300px, calc(100vw - 24px)); max-height: calc(100dvh - 76px); }
+  .stage-clock { bottom: 14px; left: 14px; }
+}
+@media (max-width: 380px) {
+  .stage { min-height: 640px; padding-left: 12px; padding-right: 12px; }
+  .s-track { font-size: 19px; }
+  .s-ctl { gap: 0; }
+  .btn { padding: 7px; }
+  .btn-play { margin: 0 4px; }
+  .waveform { gap: 2px; }
+  .wf-bar { width: 2px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+</style>
+</head>
+<body>
+
+<audio id="audioEl" preload="auto"></audio>
+
+<div class="layout">
+  <div class="stage">
+    <button class="settings-toggle" id="settingsToggle" onclick="toggleSettings()" title="Customize theme">⚙</button>
+
+    <div class="stage-clock" id="stageClock">
+      <div class="clock-time" id="clockTime">--:--</div>
+      <div class="clock-date" id="clockDate">—</div>
+    </div>
+
+    <div class="settings-panel" id="settingsPanel">
+      <div class="settings-section">
+        <div class="settings-title">Disc Color</div>
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="modeAuto" onclick="setDiscMode('auto')">Auto (album art)</button>
+          <button class="mode-btn" id="modeCustom" onclick="setDiscMode('custom')">Custom</button>
+        </div>
+        <div class="swatch-row" id="discSwatches">
+          <div class="swatch" style="background:#2a2a3e" data-color="#2a2a3e"></div>
+          <div class="swatch" style="background:#3e2a2a" data-color="#3e2a2a"></div>
+          <div class="swatch" style="background:#2a3e2e" data-color="#2a3e2e"></div>
+          <div class="swatch" style="background:#3e3520" data-color="#3e3520"></div>
+          <div class="swatch" style="background:#3e2a3a" data-color="#3e2a3a"></div>
+          <div class="swatch" style="background:#1f1f1f" data-color="#1f1f1f"></div>
+          <div class="swatch-custom" title="Pick a custom color">
+            🎨<input type="color" id="discColorPicker" value="#2a2a3e">
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-title">Disc Artwork</div>
+        <div class="skin-grid" id="skinGrid"></div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-title">Background Scene</div>
+        <div class="skin-grid" id="bgGrid"></div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-title">Background Color</div>
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="bgModeDefault" onclick="setBgColorMode('default')">Default</button>
+          <button class="mode-btn" id="bgModeCustom" onclick="setBgColorMode('custom')">Custom</button>
+        </div>
+        <div class="swatch-row" id="bgColorSwatches">
+          <div class="swatch" style="background:#09090a" data-color="#09090a"></div>
+          <div class="swatch" style="background:#101820" data-color="#101820"></div>
+          <div class="swatch" style="background:#1a1410" data-color="#1a1410"></div>
+          <div class="swatch" style="background:#141420" data-color="#141420"></div>
+          <div class="swatch" style="background:#1c1014" data-color="#1c1014"></div>
+          <div class="swatch" style="background:#f3f1ed" data-color="#f3f1ed"></div>
+          <div class="swatch-custom" title="Pick a custom color">
+            🎨<input type="color" id="bgColorPicker" value="#09090a">
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-title">Accent Color</div>
+        <div class="swatch-row" id="accentSwatches">
+          <div class="swatch selected" style="background:#edeae4" data-color="#edeae4"></div>
+          <div class="swatch" style="background:#e0574a" data-color="#e0574a"></div>
+          <div class="swatch" style="background:#5ab0e0" data-color="#5ab0e0"></div>
+          <div class="swatch" style="background:#7ed957" data-color="#7ed957"></div>
+          <div class="swatch" style="background:#e0c357" data-color="#e0c357"></div>
+          <div class="swatch" style="background:#c57ee0" data-color="#c57ee0"></div>
+          <div class="swatch-custom" title="Pick a custom color">
+            🎨<input type="color" id="accentColorPicker" value="#edeae4">
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-title">Appearance</div>
+        <div class="theme-toggle">
+          <button class="theme-btn active" id="themeDark" onclick="setTheme('dark')">◐ Dark</button>
+          <button class="theme-btn" id="themeLight" onclick="setTheme('light')">◑ Light</button>
+        </div>
+      </div>
+
+      <button class="settings-reset" onclick="resetTheme()">Reset to default</button>
+    </div>
+
+    <div class="bg-scene" id="bgScene"></div>
+    <div class="bg-glow" id="bgGlow"></div>
+    <div class="turntable">
+      <div class="disc-wrap">
+        <div class="disc" id="disc">
+          <div class="disc-vinyl" id="discVinyl"></div>
+          <div class="disc-skin" id="discSkin"></div>
+          <div class="disc-label" id="discLabel">
+            <div class="disc-label-ph" id="discPh">◉</div>
+            <img id="artImg" style="display:none" src="" alt="">
+          </div>
+          <div class="spindle"></div>
+        </div>
+      </div>
+      <div class="arm" id="arm">
+        <div class="arm-pivot"></div>
+        <div class="arm-shaft">
+          <div class="arm-head"><div class="arm-needle"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-info">
+      <div class="s-track" id="sTrack">—</div>
+      <div class="s-artist" id="sArtist">Add songs to begin</div>
+      <div class="waveform" id="waveform"></div>
+      <div class="s-prog" id="sProg">
+        <div class="pbar" id="pbar" onclick="onSeek(event)" role="slider" aria-label="Track position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+          <div class="pfill" id="pfill"></div>
+        </div>
+        <div class="ptimes">
+          <span id="tElap">0:00</span>
+          <span id="tDur">0:00</span>
+        </div>
+      </div>
+      <div class="s-ctl">
+        <button class="btn" id="bShuffle" onclick="doShuffle()" title="Shuffle" aria-label="Toggle shuffle" aria-pressed="false">⇄</button>
+        <button class="btn" id="bPrev" onclick="doPrev()" title="Previous track" aria-label="Previous track" disabled>⏮</button>
+        <button class="btn btn-play" id="bPlay" onclick="doPlay()" title="Play or pause" aria-label="Play or pause" disabled>▶</button>
+        <button class="btn" id="bNext" onclick="doNext()" title="Next track" aria-label="Next track" disabled>⏭</button>
+        <button class="btn" id="bRepeat" onclick="doRepeat()" title="Repeat mode" aria-label="Change repeat mode" aria-pressed="false">↻</button>
+      </div>
+      <div class="s-vol">
+        <span class="vi" id="vIco">🔈</span>
+        <div class="vbar" id="vbar" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="80" tabindex="0">
+          <div class="vfill" id="vfill" style="width:80%"></div>
+          <div class="vthumb" id="vthumb" style="left:80%"></div>
+        </div>
+        <span class="vi">🔊</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="upload-area">
+      <div class="upload-lbl">Your Music</div>
+      <div class="drop-zone" id="dropZone">
+        <input type="file" id="fileInput" accept="audio/*" multiple>
+        <div class="drop-icon">⤓</div>
+        <div class="drop-text">Drop audio files here<br>or click to browse</div>
+        <div class="drop-sub">MP3 · WAV · M4A · FLAC · OGG</div>
+      </div>
+    </div>
+
+    <div class="status" id="statusEl">
+      <div class="sdot"></div>
+      <span id="statusTxt">Ready</span>
+    </div>
+
+    <div class="rlist" id="rlist">
+      <div class="empty">
+        <div class="esym">◎</div>
+        <div>No songs added yet</div>
+        <div style="margin-top:5px;color:#252320;font-size:9px">Plays straight from your device</div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <span>Local playback · nothing uploaded anywhere</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────────────
+const audio = document.getElementById('audioEl');
+let playlist = [];          // { file, url, name, artist, album, art (objectURL|null) }
+let cur = -1;
+let playing = false, shuffleOn = false, repeat = 0;
+let ptimer = null, vol = 80;
+
+// theme state
+let discMode = 'auto';      // 'auto' = match album art, 'custom' = fixed color
+let discCustomColor = '#2a2a3e';
+let accentColor = '#edeae4';
+let themeMode = 'dark';
+let lastAlbumColor = { r:36, g:36, b:50 }; // fallback for auto mode w/ no art
+
+// ── DISC ART SKINS ─────────────────────────────────────────────────────
+// Original decorative overlays in a painted-vinyl style. r=152 is the disc radius (center 152,152).
+const DISC_SKINS = {
+  none: null,
+
+  daisies: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcDaisy"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcDaisy)" opacity="0.94">
+      <g transform="translate(60,40) rotate(-12)">
+        <g stroke="#dcd8c8" stroke-width="2.5" fill="none" opacity="0.85">
+          <circle cx="0" cy="0" r="9" fill="#e8b84b" stroke="none"/>
+          <ellipse cx="0" cy="-22" rx="7" ry="16" fill="#f4f2ea" stroke="#cfcab6"/>
+          <ellipse cx="15" cy="-16" rx="7" ry="16" fill="#f4f2ea" stroke="#cfcab6" transform="rotate(45 15 -16)"/>
+          <ellipse cx="22" cy="0" rx="7" ry="16" fill="#f4f2ea" stroke="#cfcab6" transform="rotate(90 22 0)"/>
+          <ellipse cx="15" cy="16" rx="7" ry="16" fill="#f4f2ea" stroke="#cfcab6" transform="rotate(135 15 16)"/>
+          <ellipse cx="0" cy="22" rx="7" ry="16" fill="#f4f2ea" stroke="#cfcab6" transform="rotate(180 0 22)"/>
+          <ellipse cx="-15" cy="16" rx="7" ry="16" fill="#f4f2ea" stroke="#cfcab6" transform="rotate(225 -15 16)"/>
+          <ellipse cx="-22" cy="0" rx="7" ry="16" fill="#f4f2ea" stroke="#cfcab6" transform="rotate(270 -22 0)"/>
+          <ellipse cx="-15" cy="-16" rx="7" ry="16" fill="#f4f2ea" stroke="#cfcab6" transform="rotate(315 -15 -16)"/>
+        </g>
+      </g>
+      <g transform="translate(228,58) rotate(20) scale(0.85)">
+        <circle cx="0" cy="0" r="9" fill="#e8b84b"/>
+        <g fill="#f4f2ea" stroke="#cfcab6" stroke-width="2">
+          <ellipse cx="0" cy="-22" rx="7" ry="16"/><ellipse cx="15" cy="-16" rx="7" ry="16" transform="rotate(45 15 -16)"/>
+          <ellipse cx="22" cy="0" rx="7" ry="16" transform="rotate(90 22 0)"/><ellipse cx="15" cy="16" rx="7" ry="16" transform="rotate(135 15 16)"/>
+          <ellipse cx="0" cy="22" rx="7" ry="16" transform="rotate(180 0 22)"/><ellipse cx="-15" cy="16" rx="7" ry="16" transform="rotate(225 -15 16)"/>
+          <ellipse cx="-22" cy="0" rx="7" ry="16" transform="rotate(270 -22 0)"/><ellipse cx="-15" cy="-16" rx="7" ry="16" transform="rotate(315 -15 -16)"/>
+        </g>
+      </g>
+      <g transform="translate(248,230) rotate(-30) scale(0.7)">
+        <circle cx="0" cy="0" r="9" fill="#e8b84b"/>
+        <g fill="#f4f2ea" stroke="#cfcab6" stroke-width="2">
+          <ellipse cx="0" cy="-22" rx="7" ry="16"/><ellipse cx="15" cy="-16" rx="7" ry="16" transform="rotate(45 15 -16)"/>
+          <ellipse cx="22" cy="0" rx="7" ry="16" transform="rotate(90 22 0)"/><ellipse cx="15" cy="16" rx="7" ry="16" transform="rotate(135 15 16)"/>
+          <ellipse cx="0" cy="22" rx="7" ry="16" transform="rotate(180 0 22)"/><ellipse cx="-15" cy="16" rx="7" ry="16" transform="rotate(225 -15 16)"/>
+          <ellipse cx="-22" cy="0" rx="7" ry="16" transform="rotate(270 -22 0)"/><ellipse cx="-15" cy="-16" rx="7" ry="16" transform="rotate(315 -15 -16)"/>
+        </g>
+      </g>
+      <g transform="translate(50,250) rotate(8) scale(0.78)">
+        <circle cx="0" cy="0" r="9" fill="#e8b84b"/>
+        <g fill="#f4f2ea" stroke="#cfcab6" stroke-width="2">
+          <ellipse cx="0" cy="-22" rx="7" ry="16"/><ellipse cx="15" cy="-16" rx="7" ry="16" transform="rotate(45 15 -16)"/>
+          <ellipse cx="22" cy="0" rx="7" ry="16" transform="rotate(90 22 0)"/><ellipse cx="15" cy="16" rx="7" ry="16" transform="rotate(135 15 16)"/>
+          <ellipse cx="0" cy="22" rx="7" ry="16" transform="rotate(180 0 22)"/><ellipse cx="-15" cy="16" rx="7" ry="16" transform="rotate(225 -15 16)"/>
+          <ellipse cx="-22" cy="0" rx="7" ry="16" transform="rotate(270 -22 0)"/><ellipse cx="-15" cy="-16" rx="7" ry="16" transform="rotate(315 -15 -16)"/>
+        </g>
+      </g>
+      <path d="M60,60 Q100,110 130,150" stroke="#6b7a4f" stroke-width="2" fill="none" opacity="0.6"/>
+      <path d="M228,80 Q210,130 175,155" stroke="#6b7a4f" stroke-width="2" fill="none" opacity="0.6"/>
+    </g>
+  </svg>`,
+
+  lavender: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcLav"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcLav)" opacity="0.94">
+      <g stroke="#5d7a4a" stroke-width="2.5" fill="none" opacity="0.85">
+        <path d="M48,250 Q70,200 60,140 Q55,100 75,55"/>
+        <path d="M256,248 Q230,195 238,135 Q243,95 222,52"/>
+      </g>
+      <g fill="#6b8a55" opacity="0.9">
+        <ellipse cx="58" cy="160" rx="14" ry="6" transform="rotate(-30 58 160)"/>
+        <ellipse cx="48" cy="200" rx="15" ry="7" transform="rotate(-20 48 200)"/>
+        <ellipse cx="70" cy="120" rx="13" ry="6" transform="rotate(-40 70 120)"/>
+        <ellipse cx="240" cy="158" rx="14" ry="6" transform="rotate(30 240 158)"/>
+        <ellipse cx="250" cy="198" rx="15" ry="7" transform="rotate(20 250 198)"/>
+        <ellipse cx="228" cy="118" rx="13" ry="6" transform="rotate(40 228 118)"/>
+      </g>
+      <g fill="#8a72c2">
+        ${Array.from({length:9}).map((_,i)=>`<ellipse cx="${66+i%3*4}" cy="${66+i*10}" rx="6" ry="4"/>`).join('')}
+        ${Array.from({length:9}).map((_,i)=>`<ellipse cx="${232-i%3*4}" cy="${64+i*10}" rx="6" ry="4"/>`).join('')}
+        ${Array.from({length:7}).map((_,i)=>`<ellipse cx="${44+i%2*5}" cy="${180+i*9}" rx="5.5" ry="3.5"/>`).join('')}
+        ${Array.from({length:7}).map((_,i)=>`<ellipse cx="${254-i%2*5}" cy="${178+i*9}" rx="5.5" ry="3.5"/>`).join('')}
+      </g>
+    </g>
+  </svg>`,
+
+  koi: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcKoi"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcKoi)" opacity="0.95">
+      <g fill="none" stroke="#3a5a52" stroke-width="2.5" opacity="0.4">
+        <path d="M20,90 Q70,70 110,95 Q140,112 165,100"/>
+        <path d="M30,200 Q75,215 115,195 Q145,180 175,195"/>
+        <path d="M250,90 Q200,72 165,98"/>
+        <path d="M255,205 Q210,222 175,200"/>
+      </g>
+      <g transform="translate(72,90) rotate(18)">
+        <path d="M0,0 Q40,-18 75,2 Q60,14 30,16 Q12,16 0,0 Z" fill="#e8e4da" stroke="#8a8470" stroke-width="1.5"/>
+        <path d="M75,2 Q95,-6 108,-18 Q100,2 90,12 Q82,10 75,2 Z" fill="#e8e4da" stroke="#8a8470" stroke-width="1.5" opacity="0.9"/>
+        <ellipse cx="20" cy="2" rx="9" ry="7" fill="#c0392b"/>
+        <ellipse cx="42" cy="-2" rx="11" ry="8" fill="#c0392b"/>
+        <ellipse cx="58" cy="6" rx="7" ry="5" fill="#c0392b" opacity="0.85"/>
+        <circle cx="4" cy="-2" r="2" fill="#222"/>
+      </g>
+      <g transform="translate(225,205) rotate(-160)">
+        <path d="M0,0 Q40,-18 75,2 Q60,14 30,16 Q12,16 0,0 Z" fill="#e8e4da" stroke="#8a8470" stroke-width="1.5"/>
+        <path d="M75,2 Q95,-6 108,-18 Q100,2 90,12 Q82,10 75,2 Z" fill="#e8e4da" stroke="#8a8470" stroke-width="1.5" opacity="0.9"/>
+        <ellipse cx="20" cy="2" rx="9" ry="7" fill="#c0392b"/>
+        <ellipse cx="42" cy="-2" rx="11" ry="8" fill="#c0392b"/>
+        <ellipse cx="58" cy="6" rx="7" ry="5" fill="#c0392b" opacity="0.85"/>
+        <circle cx="4" cy="-2" r="2" fill="#222"/>
+      </g>
+      <g fill="#fff" opacity="0.5">
+        <circle cx="34" cy="60" r="2.5"/><circle cx="46" cy="50" r="1.8"/><circle cx="262" cy="240" r="2.5"/><circle cx="250" cy="252" r="1.8"/>
+      </g>
+    </g>
+  </svg>`,
+
+  butterflies: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcBfly"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcBfly)" opacity="0.94">
+      <g transform="translate(64,70) rotate(-15)">
+        <path d="M0,0 C-18,-22 -34,-14 -32,2 C-30,16 -14,16 0,4 Z" fill="#6fb8c4" stroke="#3d7d88" stroke-width="1.5"/>
+        <path d="M0,0 C18,-22 34,-14 32,2 C30,16 14,16 0,4 Z" fill="#6fb8c4" stroke="#3d7d88" stroke-width="1.5"/>
+        <path d="M0,4 C-14,18 -22,30 -16,38 C-10,34 -4,22 0,12 Z" fill="#8fcdd6" stroke="#3d7d88" stroke-width="1.3"/>
+        <path d="M0,4 C14,18 22,30 16,38 C10,34 4,22 0,12 Z" fill="#8fcdd6" stroke="#3d7d88" stroke-width="1.3"/>
+        <line x1="0" y1="0" x2="0" y2="20" stroke="#2c4a4f" stroke-width="2"/>
+      </g>
+      <g transform="translate(220,62) rotate(20) scale(0.85)">
+        <path d="M0,0 C-18,-22 -34,-14 -32,2 C-30,16 -14,16 0,4 Z" fill="#6fb8c4" stroke="#3d7d88" stroke-width="1.5"/>
+        <path d="M0,0 C18,-22 34,-14 32,2 C30,16 14,16 0,4 Z" fill="#6fb8c4" stroke="#3d7d88" stroke-width="1.5"/>
+        <path d="M0,4 C-14,18 -22,30 -16,38 C-10,34 -4,22 0,12 Z" fill="#8fcdd6" stroke="#3d7d88" stroke-width="1.3"/>
+        <path d="M0,4 C14,18 22,30 16,38 C10,34 4,22 0,12 Z" fill="#8fcdd6" stroke="#3d7d88" stroke-width="1.3"/>
+        <line x1="0" y1="0" x2="0" y2="20" stroke="#2c4a4f" stroke-width="2"/>
+      </g>
+      <g transform="translate(150,245) rotate(4) scale(0.95)">
+        <path d="M0,0 C-18,-22 -34,-14 -32,2 C-30,16 -14,16 0,4 Z" fill="#6fb8c4" stroke="#3d7d88" stroke-width="1.5"/>
+        <path d="M0,0 C18,-22 34,-14 32,2 C30,16 14,16 0,4 Z" fill="#6fb8c4" stroke="#3d7d88" stroke-width="1.5"/>
+        <path d="M0,4 C-14,18 -22,30 -16,38 C-10,34 -4,22 0,12 Z" fill="#8fcdd6" stroke="#3d7d88" stroke-width="1.3"/>
+        <path d="M0,4 C14,18 22,30 16,38 C10,34 4,22 0,12 Z" fill="#8fcdd6" stroke="#3d7d88" stroke-width="1.3"/>
+        <line x1="0" y1="0" x2="0" y2="20" stroke="#2c4a4f" stroke-width="2"/>
+      </g>
+    </g>
+  </svg>`,
+
+  bouquet: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcBqt"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcBqt)" opacity="0.94">
+      <g transform="translate(56,238)">
+        <g fill="#efe6d2" stroke="#cdbfa0" stroke-width="1.5">
+          <circle cx="0" cy="0" r="13"/><circle cx="16" cy="-8" r="11"/><circle cx="-14" cy="-10" r="10"/>
+        </g>
+        <circle cx="0" cy="0" r="4" fill="#c9963f"/><circle cx="16" cy="-8" r="3.5" fill="#c9963f"/><circle cx="-14" cy="-10" r="3" fill="#c9963f"/>
+      </g>
+      <g transform="translate(238,64)">
+        <g fill="#8a2e3a" opacity="0.92">
+          <circle cx="0" cy="0" r="10"/><circle cx="13" cy="-6" r="8"/><circle cx="-11" cy="-7" r="8"/>
+        </g>
+      </g>
+      <g transform="translate(96,48)">
+        <g fill="#efe6d2" stroke="#cdbfa0" stroke-width="1.5">
+          <circle cx="0" cy="0" r="10"/><circle cx="12" cy="-5" r="8"/>
+        </g>
+        <circle cx="0" cy="0" r="3.2" fill="#c9963f"/>
+      </g>
+      <g transform="translate(196,228)">
+        <g fill="#8a2e3a" opacity="0.9">
+          <circle cx="0" cy="0" r="8"/><circle cx="10" cy="5" r="6.5"/>
+        </g>
+      </g>
+      <g stroke="#7a8a5f" stroke-width="2" fill="none" opacity="0.7">
+        <path d="M56,238 Q90,180 96,48"/>
+        <path d="M238,64 Q220,140 196,228"/>
+        <path d="M56,238 Q150,200 196,228"/>
+        <path d="M96,48 Q170,80 238,64"/>
+      </g>
+      <g fill="#9aab7a" opacity="0.85">
+        <ellipse cx="80" cy="150" rx="6" ry="3" transform="rotate(40 80 150)"/>
+        <ellipse cx="170" cy="160" rx="6" ry="3" transform="rotate(-30 170 160)"/>
+        <ellipse cx="140" cy="100" rx="6" ry="3" transform="rotate(15 140 100)"/>
+      </g>
+    </g>
+  </svg>`,
+
+  galaxy: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <clipPath id="dcGal"><circle cx="152" cy="152" r="152"/></clipPath>
+      <radialGradient id="gNeb1" cx="35%" cy="30%" r="55%">
+        <stop offset="0%" stop-color="#a86fd6" stop-opacity="0.85"/>
+        <stop offset="55%" stop-color="#5b3a9e" stop-opacity="0.5"/>
+        <stop offset="100%" stop-color="#1a1238" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="gNeb2" cx="70%" cy="72%" r="50%">
+        <stop offset="0%" stop-color="#e0735f" stop-opacity="0.75"/>
+        <stop offset="60%" stop-color="#7a3a5e" stop-opacity="0.4"/>
+        <stop offset="100%" stop-color="#1a1238" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <g clip-path="url(#dcGal)" opacity="0.96">
+      <rect x="0" y="0" width="304" height="304" fill="url(#gNeb1)"/>
+      <rect x="0" y="0" width="304" height="304" fill="url(#gNeb2)"/>
+      <g fill="#fff">
+        ${Array.from({length:46}).map((_,i)=>{
+          const ang = (i*137.5)%360, rad = 18+((i*53)%128);
+          const x = 152+rad*Math.cos(ang*Math.PI/180), y=152+rad*Math.sin(ang*Math.PI/180);
+          const s = 0.6+((i*7)%10)/10;
+          const op = 0.35+((i*13)%60)/100;
+          return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${s.toFixed(2)}" opacity="${op.toFixed(2)}"/>`;
+        }).join('')}
+      </g>
+      <g fill="#f5e6b8">
+        <circle cx="86" cy="64" r="1.6"/><circle cx="220" cy="100" r="1.8"/><circle cx="60" cy="220" r="1.4"/>
+        <circle cx="240" cy="210" r="1.6"/><circle cx="150" cy="40" r="1.3"/>
+      </g>
+      <path d="M40,140 Q90,60 180,55 Q250,52 268,110" stroke="#e8d9a8" stroke-width="1.2" fill="none" opacity="0.35"/>
+      <path d="M36,200 Q110,260 200,250 Q250,244 264,190" stroke="#e8d9a8" stroke-width="1.2" fill="none" opacity="0.3"/>
+    </g>
+  </svg>`,
+
+  ocean: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcOcn"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcOcn)" opacity="0.95">
+      <g fill="none" stroke="#4a9bb0" stroke-width="2.5" opacity="0.85">
+        <path d="M10,70 Q40,55 70,70 Q100,85 130,70 Q160,55 190,70 Q220,85 250,70 Q275,58 296,68"/>
+        <path d="M8,120 Q38,103 68,120 Q98,137 128,120 Q158,103 188,120 Q218,137 248,120 Q273,107 296,118"/>
+        <path d="M8,176 Q38,159 68,176 Q98,193 128,176 Q158,159 188,176 Q218,193 248,176 Q273,163 296,174"/>
+        <path d="M10,228 Q40,213 70,228 Q100,243 130,228 Q160,213 190,228 Q220,243 250,228 Q275,216 296,226"/>
+      </g>
+      <g fill="#6fc4d6" opacity="0.5">
+        <path d="M10,95 Q40,80 70,95 Q100,110 130,95 Q160,80 190,95 Q220,110 250,95 Q275,84 296,93 L296,70 Q275,58 250,70 Q220,85 190,70 Q160,55 130,70 Q100,85 70,70 Q40,55 10,70 Z"/>
+        <path d="M8,148 Q38,131 68,148 Q98,165 128,148 Q158,131 188,148 Q218,165 248,148 Q273,135 296,146 L296,118 Q273,107 248,120 Q218,137 188,120 Q158,103 128,120 Q98,137 68,120 Q38,103 8,120 Z"/>
+      </g>
+      <g fill="#e8f4f6" opacity="0.7">
+        <circle cx="60" cy="45" r="2"/><circle cx="78" cy="38" r="1.4"/><circle cx="230" cy="160" r="2"/>
+        <circle cx="248" cy="152" r="1.4"/><circle cx="44" cy="195" r="1.8"/>
+      </g>
+    </g>
+  </svg>`,
+
+  mandala: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcMan"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcMan)" opacity="0.95">
+      <g transform="translate(152,152)">
+        ${Array.from({length:12}).map((_,i)=>`
+          <g transform="rotate(${i*30})">
+            <path d="M0,-30 Q14,-60 0,-95 Q-14,-60 0,-30 Z" fill="none" stroke="#d8b864" stroke-width="1.6" opacity="0.85"/>
+            <circle cx="0" cy="-95" r="3.5" fill="#d8b864" opacity="0.8"/>
+          </g>`).join('')}
+        ${Array.from({length:8}).map((_,i)=>`
+          <g transform="rotate(${i*45+22.5})">
+            <path d="M0,-110 Q10,-130 0,-148 Q-10,-130 0,-110 Z" fill="none" stroke="#c97a5a" stroke-width="1.3" opacity="0.6"/>
+          </g>`).join('')}
+        <circle r="30" fill="none" stroke="#d8b864" stroke-width="1.6" opacity="0.7"/>
+        <circle r="22" fill="none" stroke="#c97a5a" stroke-width="1.2" opacity="0.6"/>
+        <circle r="60" fill="none" stroke="#d8b864" stroke-width="1" opacity="0.4" stroke-dasharray="3 4"/>
+        ${Array.from({length:16}).map((_,i)=>`
+          <circle cx="${(95*Math.cos(i*22.5*Math.PI/180)).toFixed(1)}" cy="${(95*Math.sin(i*22.5*Math.PI/180)).toFixed(1)}" r="1.6" fill="#d8b864" opacity="0.6"/>`).join('')}
+      </g>
+    </g>
+  </svg>`,
+
+  sunflower: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcSun"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcSun)" opacity="0.96">
+      <g transform="translate(70,76) rotate(-10)">
+        <g fill="#e8b339" stroke="#c4922a" stroke-width="1.3">
+          ${Array.from({length:13}).map((_,i)=>`<ellipse cx="0" cy="0" rx="6.5" ry="20" transform="rotate(${i*27.7})" />`).join('')}
+        </g>
+        <circle r="13" fill="#5a4222"/>
+        <g fill="#3e2e18" opacity="0.5">
+          ${Array.from({length:10}).map((_,i)=>`<circle cx="${(7*Math.cos(i*36*Math.PI/180)).toFixed(1)}" cy="${(7*Math.sin(i*36*Math.PI/180)).toFixed(1)}" r="1.1"/>`).join('')}
+        </g>
+      </g>
+      <g transform="translate(228,210) rotate(25) scale(0.72)">
+        <g fill="#e8b339" stroke="#c4922a" stroke-width="1.3">
+          ${Array.from({length:13}).map((_,i)=>`<ellipse cx="0" cy="0" rx="6.5" ry="20" transform="rotate(${i*27.7})" />`).join('')}
+        </g>
+        <circle r="13" fill="#5a4222"/>
+      </g>
+      <g transform="translate(236,68) rotate(15) scale(0.5)">
+        <g fill="#e8b339" stroke="#c4922a" stroke-width="1.3" opacity="0.92">
+          ${Array.from({length:13}).map((_,i)=>`<ellipse cx="0" cy="0" rx="6.5" ry="20" transform="rotate(${i*27.7})" />`).join('')}
+        </g>
+        <circle r="13" fill="#5a4222"/>
+      </g>
+      <g stroke="#6b8a3f" stroke-width="2.5" fill="none" opacity="0.75">
+        <path d="M70,96 Q66,160 60,238"/>
+        <path d="M228,228 Q200,200 70,96"/>
+        <path d="M236,86 Q230,140 228,210"/>
+      </g>
+      <g fill="#7a9a4a" opacity="0.8">
+        <ellipse cx="52" cy="160" rx="14" ry="6" transform="rotate(-50 52 160)"/>
+        <ellipse cx="150" cy="170" rx="13" ry="6" transform="rotate(40 150 170)"/>
+      </g>
+    </g>
+  </svg>`,
+
+  hummingbird: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcHum"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcHum)" opacity="0.96">
+      <g transform="translate(110,110) rotate(-18)">
+        <path d="M0,0 Q-30,-8 -48,2 Q-30,8 0,6 Z" fill="#3a9e7a" opacity="0.92"/>
+        <path d="M2,2 Q-22,18 -34,34 Q-16,26 4,12 Z" fill="#2c7a5e" opacity="0.85"/>
+        <ellipse cx="14" cy="2" rx="18" ry="9" fill="#4ab88a"/>
+        <ellipse cx="34" cy="-2" rx="11" ry="7" fill="#5fcf9e"/>
+        <path d="M44,-3 L62,-6 L46,1 Z" fill="#333"/>
+        <circle cx="40" cy="-6" r="1.6" fill="#111"/>
+        <path d="M2,8 Q-4,28 -10,46 Q-2,30 6,12 Z" fill="#2c7a5e"/>
+        <ellipse cx="-2" cy="0" rx="10" ry="20" fill="#3a9e7a" opacity="0.55" transform="rotate(20 -2 0)"/>
+      </g>
+      <g transform="translate(196,150) rotate(8)">
+        <circle r="14" fill="#efe6d2" stroke="#cdbfa0" stroke-width="1.4"/>
+        <circle r="4.5" fill="#c9963f"/>
+        <g fill="#efe6d2" stroke="#cdbfa0" stroke-width="1.2">
+          <ellipse cx="20" cy="6" rx="11" ry="9"/>
+        </g>
+        <circle cx="20" cy="6" r="3.5" fill="#c9963f"/>
+      </g>
+      <g transform="translate(150,232) rotate(-6) scale(0.8)">
+        <circle r="14" fill="#8a2e3a" opacity="0.85"/>
+        <ellipse cx="20" cy="6" rx="11" ry="9" fill="#8a2e3a" opacity="0.8"/>
+      </g>
+      <g stroke="#5a7a45" stroke-width="2.2" fill="none" opacity="0.7">
+        <path d="M196,164 Q175,200 150,232"/>
+        <path d="M196,164 Q230,130 254,90"/>
+      </g>
+    </g>
+  </svg>`,
+
+  roses: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcRos"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcRos)" opacity="0.96">
+      <g transform="translate(80,84)">
+        <g fill="#b8324a" stroke="#8a2038" stroke-width="1.1">
+          <circle r="9" opacity="0.95"/>
+          <path d="M0,0 Q10,-10 4,-20 Q-2,-12 0,0 Z" opacity="0.9"/>
+          <path d="M0,0 Q-12,-6 -16,4 Q-8,8 0,0 Z" opacity="0.85"/>
+          <path d="M0,0 Q10,8 18,4 Q12,-4 0,0 Z" opacity="0.8"/>
+          <path d="M0,0 Q-6,12 2,20 Q8,10 0,0 Z" opacity="0.85"/>
+        </g>
+      </g>
+      <g transform="translate(228,140) scale(0.82)">
+        <g fill="#b8324a" stroke="#8a2038" stroke-width="1.1">
+          <circle r="9" opacity="0.95"/>
+          <path d="M0,0 Q10,-10 4,-20 Q-2,-12 0,0 Z" opacity="0.9"/>
+          <path d="M0,0 Q-12,-6 -16,4 Q-8,8 0,0 Z" opacity="0.85"/>
+          <path d="M0,0 Q10,8 18,4 Q12,-4 0,0 Z" opacity="0.8"/>
+          <path d="M0,0 Q-6,12 2,20 Q8,10 0,0 Z" opacity="0.85"/>
+        </g>
+      </g>
+      <g transform="translate(112,232) scale(0.7) rotate(20)">
+        <g fill="#d05a6e" stroke="#8a2038" stroke-width="1.1">
+          <circle r="9" opacity="0.95"/>
+          <path d="M0,0 Q10,-10 4,-20 Q-2,-12 0,0 Z" opacity="0.9"/>
+          <path d="M0,0 Q-12,-6 -16,4 Q-8,8 0,0 Z" opacity="0.85"/>
+          <path d="M0,0 Q10,8 18,4 Q12,-4 0,0 Z" opacity="0.8"/>
+        </g>
+      </g>
+      <g stroke="#4a6b3a" stroke-width="2.2" fill="none" opacity="0.75">
+        <path d="M80,104 Q95,160 112,232"/>
+        <path d="M228,160 Q190,190 112,232"/>
+      </g>
+      <g fill="#5a8048" opacity="0.85">
+        <path d="M88,150 Q102,144 112,154 Q100,162 88,150 Z"/>
+        <path d="M180,190 Q194,184 204,194 Q192,202 180,190 Z"/>
+      </g>
+    </g>
+  </svg>`,
+
+  peacock: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcPea"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcPea)" opacity="0.96">
+      <g transform="translate(152,160)">
+        ${Array.from({length:9}).map((_,i)=>{
+          const ang=-100+i*25;
+          return `<g transform="rotate(${ang})">
+            <path d="M0,0 Q-6,-50 0,-92" stroke="#2c7a6e" stroke-width="2" fill="none" opacity="0.8"/>
+            <ellipse cx="0" cy="-92" rx="13" ry="17" fill="#1f6b5e"/>
+            <ellipse cx="0" cy="-92" rx="8" ry="11" fill="#3aa88c"/>
+            <ellipse cx="0" cy="-92" rx="4" ry="6" fill="#1a3a6e"/>
+          </g>`;
+        }).join('')}
+      </g>
+      <g transform="translate(152,170)">
+        <ellipse rx="16" ry="22" fill="#1f6b5e"/>
+        <circle cy="-26" r="11" fill="#2c8a6e"/>
+        <path d="M-4,-34 Q0,-44 4,-34" stroke="#2c8a6e" stroke-width="2.5" fill="none"/>
+        <circle cy="-26" r="1.6" fill="#111"/>
+      </g>
+    </g>
+  </svg>`,
+
+  moonphase: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcMoon"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcMoon)" opacity="0.96">
+      <rect width="304" height="304" fill="#171430" opacity="0.55"/>
+      <g fill="#fff" opacity="0.4">
+        ${Array.from({length:30}).map((_,i)=>{
+          const ang=(i*97)%360, rad=20+((i*41)%130);
+          const x=152+rad*Math.cos(ang*Math.PI/180), y=152+rad*Math.sin(ang*Math.PI/180);
+          return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(0.6+(i%4)*0.3).toFixed(1)}"/>`;
+        }).join('')}
+      </g>
+      <g transform="translate(152,152)">
+        ${Array.from({length:8}).map((_,i)=>{
+          const ang = -90 + i*32;
+          const r = 108;
+          const x = r*Math.cos(ang*Math.PI/180), y=r*Math.sin(ang*Math.PI/180);
+          const phase = i/7;
+          return `<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})">
+            <circle r="14" fill="#e8e2c8"/>
+            <path d="M0,-14 A14,14 0 0,1 0,14 A${(14-28*Math.abs(phase-0.5)*2).toFixed(1)},14 0 0,${phase<0.5?1:0} 0,-14 Z" fill="#1f1a3a" opacity="0.88"/>
+          </g>`;
+        }).join('')}
+      </g>
+    </g>
+  </svg>`,
+
+  dragonfly: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcDrag"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcDrag)" opacity="0.96">
+      <g transform="translate(120,120) rotate(-25)">
+        <ellipse cx="-30" cy="-18" rx="44" ry="10" fill="#7ec9c4" opacity="0.4" stroke="#4a9690" stroke-width="1"/>
+        <ellipse cx="-30" cy="2" rx="48" ry="11" fill="#7ec9c4" opacity="0.35" stroke="#4a9690" stroke-width="1"/>
+        <ellipse cx="30" cy="-14" rx="38" ry="9" fill="#7ec9c4" opacity="0.4" stroke="#4a9690" stroke-width="1"/>
+        <ellipse cx="30" cy="6" rx="42" ry="10" fill="#7ec9c4" opacity="0.35" stroke="#4a9690" stroke-width="1"/>
+        <rect x="-6" y="-30" width="12" height="64" rx="6" fill="#2e6b5a"/>
+        <circle cy="-36" r="9" fill="#1f4a3e"/>
+        <circle cx="-3" cy="-38" r="2" fill="#fff" opacity="0.8"/>
+        <circle cx="3" cy="-38" r="2" fill="#fff" opacity="0.8"/>
+      </g>
+      <g transform="translate(208,212) rotate(150) scale(0.6)">
+        <ellipse cx="-30" cy="-18" rx="44" ry="10" fill="#d6a85f" opacity="0.4" stroke="#a87a3a" stroke-width="1"/>
+        <ellipse cx="-30" cy="2" rx="48" ry="11" fill="#d6a85f" opacity="0.35" stroke="#a87a3a" stroke-width="1"/>
+        <ellipse cx="30" cy="-14" rx="38" ry="9" fill="#d6a85f" opacity="0.4" stroke="#a87a3a" stroke-width="1"/>
+        <ellipse cx="30" cy="6" rx="42" ry="10" fill="#d6a85f" opacity="0.35" stroke="#a87a3a" stroke-width="1"/>
+        <rect x="-6" y="-30" width="12" height="64" rx="6" fill="#6b4a22"/>
+        <circle cy="-36" r="9" fill="#4a3018"/>
+      </g>
+      <g stroke="#4a8a5e" stroke-width="1.5" fill="none" opacity="0.3">
+        <path d="M30,250 Q60,200 110,160"/>
+        <path d="M250,60 Q220,100 200,140"/>
+      </g>
+    </g>
+  </svg>`,
+
+  blossom: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcBlo"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcBlo)" opacity="0.96">
+      <g stroke="#6b4a3a" stroke-width="3" fill="none" opacity="0.7">
+        <path d="M-10,160 Q70,120 140,140 Q200,156 260,110"/>
+        <path d="M40,260 Q90,200 150,150"/>
+      </g>
+      ${[[60,90,1,0],[100,60,0.7,20],[150,50,0.85,-15],[200,80,0.6,35],[230,140,0.9,5],[180,170,0.55,-25],[80,180,0.7,15],[40,210,0.6,-10]].map(([cx,cy,sc,rot])=>`
+        <g transform="translate(${cx},${cy}) rotate(${rot}) scale(${sc})">
+          <g fill="#f3c9d6" stroke="#d690a8" stroke-width="1">
+            <ellipse cx="0" cy="-10" rx="7" ry="11"/>
+            <ellipse cx="9" cy="-3" rx="7" ry="11" transform="rotate(72 9 -3)"/>
+            <ellipse cx="6" cy="8" rx="7" ry="11" transform="rotate(144 6 8)"/>
+            <ellipse cx="-6" cy="8" rx="7" ry="11" transform="rotate(216 -6 8)"/>
+            <ellipse cx="-9" cy="-3" rx="7" ry="11" transform="rotate(288 -9 -3)"/>
+          </g>
+          <circle r="4" fill="#e8b339"/>
+        </g>`).join('')}
+      <g fill="#f3c9d6" opacity="0.5">
+        <circle cx="30" cy="60" r="2"/><circle cx="270" cy="200" r="2.4"/><circle cx="250" cy="50" r="1.6"/>
+      </g>
+    </g>
+  </svg>`,
+
+  artdeco: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcDeco"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcDeco)" opacity="0.96">
+      <g transform="translate(152,260)">
+        ${Array.from({length:11}).map((_,i)=>{
+          const ang=-90-i*16;
+          return `<path d="M0,0 L${(150*Math.cos(ang*Math.PI/180)).toFixed(1)},${(150*Math.sin(ang*Math.PI/180)).toFixed(1)}" stroke="${i%2===0?'#d8b864':'#8a2038'}" stroke-width="3" opacity="0.7"/>`;
+        }).join('')}
+        <path d="M-150,0 A150,150 0 0,1 150,0" fill="none" stroke="#d8b864" stroke-width="2" opacity="0.5"/>
+        <path d="M-110,0 A110,110 0 0,1 110,0" fill="none" stroke="#d8b864" stroke-width="1.5" opacity="0.4"/>
+      </g>
+      <g transform="translate(152,44)">
+        ${Array.from({length:7}).map((_,i)=>`<circle cx="${(i-3)*16}" cy="0" r="3" fill="#d8b864" opacity="0.6"/>`).join('')}
+      </g>
+    </g>
+  </svg>`,
+
+  wolf: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcWolf"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcWolf)" opacity="0.96">
+      <rect width="304" height="304" fill="#1a2438" opacity="0.4"/>
+      <g transform="translate(152,168)" fill="#e8e4dc" opacity="0.92">
+        <path d="M0,-60 Q-38,-50 -48,-10 Q-50,20 -30,42 Q-10,56 0,56 Q10,56 30,42 Q50,20 48,-10 Q38,-50 0,-60 Z" stroke="#9a958a" stroke-width="1.5"/>
+        <path d="M-26,-48 L-40,-78 L-14,-54 Z" fill="#e8e4dc" stroke="#9a958a" stroke-width="1.3"/>
+        <path d="M26,-48 L40,-78 L14,-54 Z" fill="#e8e4dc" stroke="#9a958a" stroke-width="1.3"/>
+        <path d="M0,-10 Q-10,10 -2,24 Q4,30 10,24 Q18,10 0,-10 Z" fill="#cfc9bc"/>
+        <circle cx="-16" cy="-16" r="3" fill="#2a3a4a"/>
+        <circle cx="16" cy="-16" r="3" fill="#2a3a4a"/>
+      </g>
+      <g stroke="#5a6a4a" stroke-width="2" fill="none" opacity="0.3">
+        <path d="M20,260 L60,200"/><path d="M284,260 L244,200"/>
+      </g>
+      <g fill="#fff" opacity="0.3">
+        <circle cx="50" cy="40" r="1.4"/><circle cx="80" cy="60" r="1"/><circle cx="240" cy="50" r="1.4"/>
+      </g>
+    </g>
+  </svg>`,
+
+  geode: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcGeo"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcGeo)" opacity="0.96">
+      <path d="M40,30 L130,10 L210,40 L270,120 L250,220 L160,280 L60,250 L10,160 Z" fill="#2a1f3e" opacity="0.5"/>
+      <g fill="#8a6fd6" opacity="0.7">
+        ${Array.from({length:20}).map((_,i)=>{
+          const ang=i*18, rad=60+((i*23)%90);
+          const x=152+rad*Math.cos(ang*Math.PI/180), y=152+rad*Math.sin(ang*Math.PI/180);
+          const s=4+((i*7)%10);
+          return `<polygon points="${x-s},${y} ${x},${y-s*1.6} ${x+s},${y} ${x},${y+s*1.6}" opacity="${0.5+((i*13)%5)/10}"/>`;
+        }).join('')}
+      </g>
+      <g fill="#c9a8ff" opacity="0.8">
+        ${Array.from({length:14}).map((_,i)=>{
+          const ang=i*25.7, rad=30+((i*17)%40);
+          const x=152+rad*Math.cos(ang*Math.PI/180), y=152+rad*Math.sin(ang*Math.PI/180);
+          return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(1.5+(i%3)).toFixed(1)}"/>`;
+        }).join('')}
+      </g>
+      <circle cx="152" cy="152" r="20" fill="#e8d9ff" opacity="0.5"/>
+    </g>
+  </svg>`,
+
+  citrus: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcCit"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcCit)" opacity="0.96">
+      <g transform="translate(86,90)">
+        <circle r="32" fill="#f0a830" stroke="#c9852a" stroke-width="1.5"/>
+        <circle r="26" fill="#f7d488"/>
+        ${Array.from({length:8}).map((_,i)=>`<path d="M0,0 L0,-25" stroke="#f0a830" stroke-width="1.3" transform="rotate(${i*45})"/>`).join('')}
+        <circle r="5" fill="#fff" opacity="0.6"/>
+      </g>
+      <g transform="translate(220,150) scale(0.8)">
+        <circle r="32" fill="#7ab648" stroke="#5a8e30" stroke-width="1.5"/>
+        <circle r="26" fill="#bfe09a"/>
+        ${Array.from({length:8}).map((_,i)=>`<path d="M0,0 L0,-25" stroke="#7ab648" stroke-width="1.3" transform="rotate(${i*45})"/>`).join('')}
+      </g>
+      <g transform="translate(140,234) scale(0.62) rotate(15)">
+        <circle r="32" fill="#e8632e" stroke="#b8431a" stroke-width="1.5"/>
+        <circle r="26" fill="#f5a368"/>
+        ${Array.from({length:8}).map((_,i)=>`<path d="M0,0 L0,-25" stroke="#e8632e" stroke-width="1.3" transform="rotate(${i*45})"/>`).join('')}
+      </g>
+      <g stroke="#5a7a3a" stroke-width="2" fill="none" opacity="0.6">
+        <path d="M86,122 Q150,170 140,234"/>
+        <path d="M220,178 Q190,210 140,234"/>
+      </g>
+      <g fill="#6b9a48" opacity="0.8">
+        <ellipse cx="60" cy="50" rx="10" ry="5" transform="rotate(-30 60 50)"/>
+        <ellipse cx="250" cy="110" rx="10" ry="5" transform="rotate(40 250 110)"/>
+      </g>
+    </g>
+  </svg>`,
+
+  constellation: `<svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg">
+    <defs><clipPath id="dcCons"><circle cx="152" cy="152" r="152"/></clipPath></defs>
+    <g clip-path="url(#dcCons)" opacity="0.96">
+      <rect width="304" height="304" fill="#0e1530" opacity="0.55"/>
+      <g fill="#fff" opacity="0.35">
+        ${Array.from({length:50}).map((_,i)=>{
+          const ang=(i*73)%360, rad=10+((i*37)%140);
+          const x=152+rad*Math.cos(ang*Math.PI/180), y=152+rad*Math.sin(ang*Math.PI/180);
+          return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(0.5+(i%4)*0.25).toFixed(2)}"/>`;
+        }).join('')}
+      </g>
+      <g stroke="#cfe0ff" stroke-width="1.2" fill="none" opacity="0.55">
+        <path d="M70,80 L100,60 L140,75 L160,50 L195,68 L210,100"/>
+        <path d="M90,200 L120,180 L110,220 L150,230 L170,195 L200,215"/>
+      </g>
+      <g fill="#fff">
+        <circle cx="70" cy="80" r="2.3"/><circle cx="100" cy="60" r="2"/><circle cx="140" cy="75" r="2.4"/>
+        <circle cx="160" cy="50" r="2"/><circle cx="195" cy="68" r="2.6"/><circle cx="210" cy="100" r="2"/>
+        <circle cx="90" cy="200" r="2.2"/><circle cx="120" cy="180" r="2"/><circle cx="110" cy="220" r="2.3"/>
+        <circle cx="150" cy="230" r="2"/><circle cx="170" cy="195" r="2.4"/><circle cx="200" cy="215" r="2"/>
+      </g>
+    </g>
+  </svg>`
+};
+
+function buildSkinPicker() {
+  const grid = document.getElementById('skinGrid');
+  let html = `<div class="skin-thumb skin-thumb-none selected" data-skin="none" onclick="setDiscSkin('none')">Plain</div>`;
+  Object.keys(DISC_SKINS).forEach(key => {
+    if (key === 'none') return;
+    html += `<div class="skin-thumb" data-skin="${key}" onclick="setDiscSkin('${key}')">${DISC_SKINS[key]}</div>`;
+  });
+  grid.innerHTML = html;
+}
+
+let currentSkin = 'none';
+function setDiscSkin(key) {
+  currentSkin = key;
+  const skinEl = document.getElementById('discSkin');
+  if (key === 'none' || !DISC_SKINS[key]) {
+    skinEl.innerHTML = '';
+    skinEl.classList.remove('active');
+  } else {
+    skinEl.innerHTML = DISC_SKINS[key];
+    skinEl.classList.add('active');
+  }
+  document.querySelectorAll('[data-skin]').forEach(t => t.classList.toggle('selected', t.dataset.skin === key));
+  saveTheme();
+}
+buildSkinPicker();
+
+// ── BACKGROUND SCENES ──────────────────────────────────────────────────
+// Full-stage backdrops, same thematic families as the disc artworks.
+const BG_SCENES = {
+  none: null,
+
+  cosmic: `<svg viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="bgCos1" cx="30%" cy="25%" r="60%">
+        <stop offset="0%" stop-color="#6a3fa0" stop-opacity="0.55"/>
+        <stop offset="60%" stop-color="#2a1850" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="#0a0a14" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="bgCos2" cx="75%" cy="70%" r="55%">
+        <stop offset="0%" stop-color="#c4574a" stop-opacity="0.4"/>
+        <stop offset="100%" stop-color="#0a0a14" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <rect width="800" height="800" fill="#0a0a14"/>
+    <rect width="800" height="800" fill="url(#bgCos1)"/>
+    <rect width="800" height="800" fill="url(#bgCos2)"/>
+    <g fill="#fff">
+      ${Array.from({length:90}).map((_,i)=>{
+        const x=(i*173)%800, y=(i*331)%800, s=0.5+((i*11)%14)/10, op=0.25+((i*17)%55)/100;
+        return `<circle cx="${x}" cy="${y}" r="${s.toFixed(2)}" opacity="${op.toFixed(2)}"/>`;
+      }).join('')}
+    </g>
+  </svg>`,
+
+  oceanwave: `<svg viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bgOcn" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#0d2530"/>
+        <stop offset="100%" stop-color="#102e3a"/>
+      </linearGradient>
+    </defs>
+    <rect width="800" height="800" fill="url(#bgOcn)"/>
+    <g fill="none" stroke="#2c6878" stroke-width="2" opacity="0.35">
+      ${Array.from({length:9}).map((_,i)=>`<path d="M-50,${90+i*85} Q150,${60+i*85} 350,${90+i*85} Q550,${120+i*85} 750,${90+i*85} Q850,${75+i*85} 950,${90+i*85}"/>`).join('')}
+    </g>
+    <g fill="#3a8a9a" opacity="0.12">
+      ${Array.from({length:5}).map((_,i)=>`<path d="M-50,${130+i*150} Q200,${100+i*150} 400,${130+i*150} Q600,${160+i*150} 850,${130+i*150} L850,${250+i*150} L-50,${250+i*150} Z"/>`).join('')}
+    </g>
+  </svg>`,
+
+  garden: `<svg viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bgGar" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#1a1410"/>
+        <stop offset="100%" stop-color="#100d0a"/>
+      </linearGradient>
+    </defs>
+    <rect width="800" height="800" fill="url(#bgGar)"/>
+    <g opacity="0.16" stroke="#7a9a5e" stroke-width="2" fill="none">
+      ${Array.from({length:6}).map((_,i)=>{
+        const x=(i*150)%800;
+        return `<path d="M${x},800 Q${x+40},600 ${x-20},400 Q${x+30},250 ${x},80"/>`;
+      }).join('')}
+    </g>
+    <g opacity="0.14" fill="#c98aa0">
+      ${Array.from({length:14}).map((_,i)=>{
+        const x=(i*113)%800, y=(i*197)%800, s=10+(i%4)*6;
+        return `<circle cx="${x}" cy="${y}" r="${s}"/>`;
+      }).join('')}
+    </g>
+  </svg>`,
+
+  sunsetsky: `<svg viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bgSun" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#2a1830"/>
+        <stop offset="45%" stop-color="#5a2a3a"/>
+        <stop offset="75%" stop-color="#8a4a3a"/>
+        <stop offset="100%" stop-color="#1a1014"/>
+      </linearGradient>
+      <radialGradient id="bgSunOrb" cx="50%" cy="62%" r="22%">
+        <stop offset="0%" stop-color="#f0b860" stop-opacity="0.55"/>
+        <stop offset="100%" stop-color="#f0b860" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <rect width="800" height="800" fill="url(#bgSun)"/>
+    <rect width="800" height="800" fill="url(#bgSunOrb)"/>
+    <g fill="#1a1014" opacity="0.5">
+      <path d="M0,720 Q120,680 240,710 Q360,740 480,700 Q600,665 720,705 Q780,720 800,710 L800,800 L0,800 Z"/>
+    </g>
+  </svg>`,
+
+  forestmist: `<svg viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bgFor" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#141c18"/>
+        <stop offset="100%" stop-color="#0c100e"/>
+      </linearGradient>
+    </defs>
+    <rect width="800" height="800" fill="url(#bgFor)"/>
+    <g fill="#2a3a2c" opacity="0.5">
+      ${Array.from({length:7}).map((_,i)=>{
+        const x=(i*123)%800, h=300+(i*53)%250;
+        return `<polygon points="${x},800 ${x-50},800 ${x-10},${800-h} ${x+10},${800-h} ${x+50},800 ${x+30},800" opacity="${0.3+(i%3)*0.15}"/>`;
+      }).join('')}
+    </g>
+    <rect width="800" height="800" fill="#1c2620" opacity="0.25"/>
+  </svg>`,
+
+  crystalcave: `<svg viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bgCry" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#1a1430"/>
+        <stop offset="100%" stop-color="#0e0a1c"/>
+      </linearGradient>
+    </defs>
+    <rect width="800" height="800" fill="url(#bgCry)"/>
+    <g fill="#7a5fc4" opacity="0.18">
+      ${Array.from({length:16}).map((_,i)=>{
+        const x=(i*191)%800, y=(i*271)%800, s=20+(i%5)*14;
+        return `<polygon points="${x-s},${y} ${x},${y-s*1.6} ${x+s},${y} ${x},${y+s*1.6}"/>`;
+      }).join('')}
+    </g>
+  </svg>`,
+
+  citrusgrove: `<svg viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bgCitG" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#1c1810"/>
+        <stop offset="100%" stop-color="#14110c"/>
+      </linearGradient>
+    </defs>
+    <rect width="800" height="800" fill="url(#bgCitG)"/>
+    <g fill="#c98a3a" opacity="0.12">
+      ${Array.from({length:10}).map((_,i)=>{
+        const x=(i*157)%800, y=(i*239)%800, r=18+(i%4)*10;
+        return `<circle cx="${x}" cy="${y}" r="${r}"/>`;
+      }).join('')}
+    </g>
+    <g fill="#7a9a4a" opacity="0.1">
+      ${Array.from({length:8}).map((_,i)=>{
+        const x=(i*191)%800, y=(i*113)%800;
+        return `<ellipse cx="${x}" cy="${y}" rx="22" ry="11" transform="rotate(${i*23} ${x} ${y})"/>`;
+      }).join('')}
+    </g>
+  </svg>`,
+
+  starfield: `<svg viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <rect width="800" height="800" fill="#0c1228"/>
+    <g fill="#fff">
+      ${Array.from({length:120}).map((_,i)=>{
+        const x=(i*211)%800, y=(i*359)%800, s=0.5+((i*7)%12)/10, op=0.2+((i*19)%60)/100;
+        return `<circle cx="${x}" cy="${y}" r="${s.toFixed(2)}" opacity="${op.toFixed(2)}"/>`;
+      }).join('')}
+    </g>
+    <g stroke="#cfe0ff" stroke-width="1" opacity="0.2" fill="none">
+      <path d="M150,200 L220,160 L300,210"/>
+      <path d="M550,500 L600,450 L680,490"/>
+    </g>
+  </svg>`
+};
+
+function buildBgPicker() {
+  const grid = document.getElementById('bgGrid');
+  let html = `<div class="skin-thumb skin-thumb-none selected" data-bg="none" onclick="setBgScene('none')">None</div>`;
+  Object.keys(BG_SCENES).forEach(key => {
+    if (key === 'none') return;
+    html += `<div class="skin-thumb" data-bg="${key}" onclick="setBgScene('${key}')">${BG_SCENES[key]}</div>`;
+  });
+  grid.innerHTML = html;
+}
+
+let currentBg = 'none';
+function setBgScene(key) {
+  currentBg = key;
+  const bgEl = document.getElementById('bgScene');
+  if (key === 'none' || !BG_SCENES[key]) {
+    bgEl.innerHTML = '';
+    bgEl.classList.remove('active');
+  } else {
+    bgEl.innerHTML = BG_SCENES[key];
+    bgEl.classList.add('active');
+  }
+  document.querySelectorAll('[data-bg]').forEach(t => t.classList.toggle('selected', t.dataset.bg === key));
+  saveTheme();
+}
+buildBgPicker();
+
+// ── CUSTOM BACKGROUND COLOR ────────────────────────────────────────────
+let bgColorMode = 'default'; // 'default' = theme bg var, 'custom' = fixed hex
+let bgCustomColor = '#09090a';
+
+function setBgColorMode(mode) {
+  bgColorMode = mode;
+  document.getElementById('bgModeDefault').classList.toggle('active', mode==='default');
+  document.getElementById('bgModeCustom').classList.toggle('active', mode==='custom');
+  if (mode === 'custom') {
+    document.documentElement.style.setProperty('--bg', bgCustomColor);
+  } else {
+    document.documentElement.style.removeProperty('--bg');
+  }
+  saveTheme();
+}
+
+document.querySelectorAll('#bgColorSwatches .swatch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    bgCustomColor = sw.dataset.color;
+    document.getElementById('bgColorPicker').value = bgCustomColor;
+    document.querySelectorAll('#bgColorSwatches .swatch').forEach(s => s.classList.remove('selected'));
+    sw.classList.add('selected');
+    setBgColorMode('custom');
+  });
+});
+document.getElementById('bgColorPicker').addEventListener('input', e => {
+  bgCustomColor = e.target.value;
+  document.querySelectorAll('#bgColorSwatches .swatch').forEach(s => s.classList.remove('selected'));
+  setBgColorMode('custom');
+});
+
+
+
+function toggleSettings() {
+  document.getElementById('settingsPanel').classList.toggle('open');
+  document.getElementById('settingsToggle').classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  const panel = document.getElementById('settingsPanel');
+  const toggle = document.getElementById('settingsToggle');
+  if (panel.classList.contains('open') && !panel.contains(e.target) && !toggle.contains(e.target)) {
+    panel.classList.remove('open');
+    toggle.classList.remove('open');
+  }
+});
+
+function setDiscMode(mode) {
+  discMode = mode;
+  document.getElementById('modeAuto').classList.toggle('active', mode==='auto');
+  document.getElementById('modeCustom').classList.toggle('active', mode==='custom');
+  if (mode === 'custom') {
+    applyDiscColorHex(discCustomColor);
+  } else {
+    applyColor(lastAlbumColor.r, lastAlbumColor.g, lastAlbumColor.b);
+  }
+  saveTheme();
+}
+
+document.querySelectorAll('#discSwatches .swatch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    const color = sw.dataset.color;
+    discCustomColor = color;
+    document.getElementById('discColorPicker').value = color;
+    document.querySelectorAll('#discSwatches .swatch').forEach(s => s.classList.remove('selected'));
+    sw.classList.add('selected');
+    setDiscMode('custom');
+  });
+});
+document.getElementById('discColorPicker').addEventListener('input', e => {
+  discCustomColor = e.target.value;
+  document.querySelectorAll('#discSwatches .swatch').forEach(s => s.classList.remove('selected'));
+  setDiscMode('custom');
+});
+
+document.querySelectorAll('#accentSwatches .swatch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    accentColor = sw.dataset.color;
+    document.getElementById('accentColorPicker').value = accentColor;
+    document.querySelectorAll('#accentSwatches .swatch').forEach(s => s.classList.remove('selected'));
+    sw.classList.add('selected');
+    applyAccentColor(accentColor);
+    saveTheme();
+  });
+});
+document.getElementById('accentColorPicker').addEventListener('input', e => {
+  accentColor = e.target.value;
+  document.querySelectorAll('#accentSwatches .swatch').forEach(s => s.classList.remove('selected'));
+  applyAccentColor(accentColor);
+  saveTheme();
+});
+
+function setTheme(mode) {
+  themeMode = mode;
+  document.documentElement.setAttribute('data-theme', mode);
+  document.getElementById('themeDark').classList.toggle('active', mode==='dark');
+  document.getElementById('themeLight').classList.toggle('active', mode==='light');
+  saveTheme();
+}
+
+function applyAccentColor(hex) {
+  document.documentElement.style.setProperty('--accent', hex);
+  // pick readable text color for the accent button (play button)
+  const {r,g,b} = hexToRgb(hex);
+  const lum = (0.299*r + 0.587*g + 0.114*b) / 255;
+  document.documentElement.style.setProperty('--accent-text', lum > 0.6 ? '#0a0a0a' : '#fbfaf8');
+}
+
+function applyDiscColorHex(hex) {
+  const {r,g,b} = hexToRgb(hex);
+  applyColor(r,g,b);
+}
+
+function hexToRgb(hex) {
+  hex = hex.replace('#','');
+  if (hex.length===3) hex = hex.split('').map(c=>c+c).join('');
+  const num = parseInt(hex,16);
+  return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
+}
+
+function resetTheme() {
+  discMode = 'auto'; discCustomColor = '#2a2a3e'; accentColor = '#edeae4'; themeMode = 'dark';
+  bgColorMode = 'default'; bgCustomColor = '#09090a';
+  document.documentElement.removeAttribute('data-theme');
+  document.documentElement.style.removeProperty('--accent');
+  document.documentElement.style.removeProperty('--accent-text');
+  document.documentElement.style.removeProperty('--bg');
+  document.getElementById('modeAuto').classList.add('active');
+  document.getElementById('modeCustom').classList.remove('active');
+  document.getElementById('themeDark').classList.add('active');
+  document.getElementById('themeLight').classList.remove('active');
+  document.getElementById('bgModeDefault').classList.add('active');
+  document.getElementById('bgModeCustom').classList.remove('active');
+  document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
+  document.querySelector('#accentSwatches .swatch').classList.add('selected');
+  document.getElementById('discColorPicker').value = '#2a2a3e';
+  document.getElementById('accentColorPicker').value = '#edeae4';
+  document.getElementById('bgColorPicker').value = '#09090a';
+  applyColor(lastAlbumColor.r, lastAlbumColor.g, lastAlbumColor.b);
+  setDiscSkin('none');
+  setBgScene('none');
+  localStorage.removeItem('vinylTheme');
+}
+
+function saveTheme() {
+  try {
+    localStorage.setItem('vinylTheme', JSON.stringify({ discMode, discCustomColor, accentColor, themeMode, currentSkin, currentBg, bgColorMode, bgCustomColor }));
+  } catch(e) {}
+}
+
+function loadTheme() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('vinylTheme') || 'null');
+    if (!saved) return;
+    discMode = saved.discMode || 'auto';
+    discCustomColor = saved.discCustomColor || '#2a2a3e';
+    accentColor = saved.accentColor || '#edeae4';
+    themeMode = saved.themeMode || 'dark';
+    bgColorMode = saved.bgColorMode || 'default';
+    bgCustomColor = saved.bgCustomColor || '#09090a';
+
+    document.getElementById('modeAuto').classList.toggle('active', discMode==='auto');
+    document.getElementById('modeCustom').classList.toggle('active', discMode==='custom');
+    document.getElementById('discColorPicker').value = discCustomColor;
+    document.getElementById('accentColorPicker').value = accentColor;
+    document.getElementById('bgColorPicker').value = bgCustomColor;
+
+    if (themeMode === 'light') setTheme('light');
+    applyAccentColor(accentColor);
+
+    const matchingAccentSwatch = document.querySelector(`#accentSwatches .swatch[data-color="${accentColor}"]`);
+    document.querySelectorAll('#accentSwatches .swatch').forEach(s => s.classList.remove('selected'));
+    (matchingAccentSwatch || document.querySelector('#accentSwatches .swatch')).classList.add('selected');
+
+    if (discMode === 'custom') {
+      const matchingDiscSwatch = document.querySelector(`#discSwatches .swatch[data-color="${discCustomColor}"]`);
+      if (matchingDiscSwatch) matchingDiscSwatch.classList.add('selected');
+      applyDiscColorHex(discCustomColor);
+    }
+
+    if (bgColorMode === 'custom') {
+      document.getElementById('bgModeDefault').classList.remove('active');
+      document.getElementById('bgModeCustom').classList.add('active');
+      document.documentElement.style.setProperty('--bg', bgCustomColor);
+      const matchingBgSwatch = document.querySelector(`#bgColorSwatches .swatch[data-color="${bgCustomColor}"]`);
+      if (matchingBgSwatch) matchingBgSwatch.classList.add('selected');
+    }
+
+    if (saved.currentSkin && DISC_SKINS.hasOwnProperty(saved.currentSkin)) {
+      setDiscSkin(saved.currentSkin);
+    }
+    if (saved.currentBg && BG_SCENES.hasOwnProperty(saved.currentBg)) {
+      setBgScene(saved.currentBg);
+    }
+  } catch(e) { console.warn('Could not load theme', e); }
+}
+loadTheme();
+
+// ── FILE INPUT / DRAG-DROP ────────────────────────────────────────────
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+['dragenter','dragover'].forEach(evt => {
+  dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+});
+['dragleave','drop'].forEach(evt => {
+  dropZone.addEventListener(evt, e => { e.preventDefault(); dropZone.classList.remove('dragover'); });
+});
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  handleFiles(e.dataTransfer.files);
+});
+
+async function handleFiles(fileList) {
+  const files = Array.from(fileList).filter(f => f.type.startsWith('audio/') || /\.(mp3|wav|m4a|flac|ogg|aac|opus)$/i.test(f.name));
+  if (!files.length) return;
+
+  setSt(`Adding ${files.length} track${files.length>1?'s':''}…`);
+
+  for (const file of files) {
+    const meta = await parseMetadata(file);
+    const url = URL.createObjectURL(file);
+    playlist.push({
+      file,
+      url,
+      name: meta.title || stripExt(file.name),
+      artist: meta.artist || 'Unknown Artist',
+      album: meta.album || '',
+      art: meta.art || null
+    });
+  }
+
+  renderList();
+  setSt(`${playlist.length} track${playlist.length>1?'s':''} in library`);
+
+  // auto-play first track if nothing is playing
+  if (cur === -1 && playlist.length) {
+    selectTrack(0);
+  }
+  fileInput.value = '';
+}
+
+function stripExt(name) {
+  return name.replace(/\.[^/.]+$/, '');
+}
+
+// ── ID3 / METADATA PARSING ────────────────────────────────────────────
+// Lightweight ID3v2 tag + cover art parser (no external libs)
+async function parseMetadata(file) {
+  const result = { title:null, artist:null, album:null, art:null };
+  try {
+    const buf = await file.slice(0, 2_000_000).arrayBuffer(); // first 2MB is enough for tags
+    const view = new DataView(buf);
+    const bytes = new Uint8Array(buf);
+
+    // Check for ID3v2 header "ID3"
+    if (bytes[0]===0x49 && bytes[1]===0x44 && bytes[2]===0x33) {
+      const verMajor = bytes[3];
+      const tagSize = synchsafe(bytes[6],bytes[7],bytes[8],bytes[9]);
+      let offset = 10;
+      const end = Math.min(10 + tagSize, bytes.length);
+
+      while (offset < end - 10) {
+        let frameId, frameSize, headerLen;
+        if (verMajor >= 3) {
+          frameId = str(bytes, offset, 4);
+          if (verMajor === 4) {
+            frameSize = synchsafe(bytes[offset+4],bytes[offset+5],bytes[offset+6],bytes[offset+7]);
+          } else {
+            frameSize = (bytes[offset+4]<<24)|(bytes[offset+5]<<16)|(bytes[offset+6]<<8)|bytes[offset+7];
+          }
+          headerLen = 10;
+        } else {
+          frameId = str(bytes, offset, 3);
+          frameSize = (bytes[offset+3]<<16)|(bytes[offset+4]<<8)|bytes[offset+5];
+          headerLen = 6;
+        }
+        if (!frameId || frameSize <= 0 || frameSize > end) break;
+
+        const frameStart = offset + headerLen;
+        const frameData = bytes.slice(frameStart, frameStart + frameSize);
+
+        if (frameId === 'TIT2' || frameId === 'TT2') result.title = decodeText(frameData);
+        else if (frameId === 'TPE1' || frameId === 'TP1') result.artist = decodeText(frameData);
+        else if (frameId === 'TALB' || frameId === 'TAL') result.album = decodeText(frameData);
+        else if (frameId === 'APIC' || frameId === 'PIC') {
+          const pic = parsePicFrame(frameData, frameId.length===4);
+          if (pic) result.art = pic;
+        }
+
+        offset = frameStart + frameSize;
+      }
+    }
+  } catch(e) {
+    console.warn('Metadata parse error:', e);
+  }
+  return result;
+}
+
+function synchsafe(a,b,c,d) {
+  return ((a&0x7f)<<21)|((b&0x7f)<<14)|((c&0x7f)<<7)|(d&0x7f);
+}
+function str(bytes, start, len) {
+  let s = '';
+  for (let i=0;i<len;i++) s += String.fromCharCode(bytes[start+i]);
+  return s;
+}
+function decodeText(data) {
+  if (!data.length) return '';
+  const enc = data[0];
+  let bytes = data.slice(1);
+  // strip trailing nulls
+  let str;
+  if (enc === 1 || enc === 2) {
+    // UTF-16
+    if (bytes[0]===0xFF && bytes[1]===0xFE || bytes[0]===0xFE && bytes[1]===0xFF) bytes = bytes.slice(2);
+    const arr = [];
+    for (let i=0;i<bytes.length-1;i+=2) {
+      arr.push(bytes[i] | (bytes[i+1]<<8));
+    }
+    str = String.fromCharCode(...arr.filter(c=>c!==0));
+  } else {
+    // Latin1 / UTF-8
+    str = new TextDecoder(enc===3?'utf-8':'latin1').decode(bytes);
+  }
+  return str.replace(/\0+$/,'').trim();
+}
+
+function parsePicFrame(data, isV2) {
+  try {
+    let offset = 0;
+    const textEnc = data[offset]; offset += 1;
+    let mime;
+    if (isV2) {
+      mime = str(data, offset, 3); offset += 3;
+      mime = mime === 'PNG' ? 'image/png' : mime === 'JPG' ? 'image/jpeg' : 'image/jpeg';
+    } else {
+      let mimeEnd = offset;
+      while (data[mimeEnd] !== 0 && mimeEnd < data.length) mimeEnd++;
+      mime = str(data, offset, mimeEnd-offset) || 'image/jpeg';
+      offset = mimeEnd + 1;
+    }
+    offset += 1; // picture type byte
+
+    // skip description (null-terminated, possibly UTF-16)
+    if (textEnc === 1 || textEnc === 2) {
+      while (offset < data.length-1 && !(data[offset]===0 && data[offset+1]===0)) offset += 2;
+      offset += 2;
+    } else {
+      while (offset < data.length && data[offset] !== 0) offset++;
+      offset += 1;
+    }
+
+    const imgBytes = data.slice(offset);
+    if (!imgBytes.length) return null;
+    const blob = new Blob([imgBytes], { type: mime });
+    return URL.createObjectURL(blob);
+  } catch(e) {
+    return null;
+  }
+}
+
+// ── PLAYLIST RENDER ────────────────────────────────────────────────────
+function renderList() {
+  const el = document.getElementById('rlist');
+  if (!playlist.length) {
+    el.innerHTML = `<div class="empty"><div class="esym">◎</div><div>No songs added yet</div></div>`;
+    return;
+  }
+  let h = `<div class="rhdr"><span>${playlist.length} track${playlist.length>1?'s':''}</span><span class="rhdr-clear" onclick="clearAll()">clear all</span></div>`;
+  playlist.forEach((t,i) => {
+    const active = cur === i;
+    h += `
+      <div class="rrow${active?' active':''}" onclick="selectTrack(${i})">
+        <span class="rnum">${active?'♪':i+1}</span>
+        ${t.art ? `<img class="rthumb" src="${t.art}">` : `<div class="rthumb">♪</div>`}
+        <div class="rmeta">
+          <div class="rname">${esc(t.name)}</div>
+          <div class="rsub">${esc(t.artist)}</div>
+        </div>
+        <span class="rplay">▶</span>
+        <span class="rremove" onclick="event.stopPropagation();removeTrack(${i})">✕</span>
+      </div>`;
+  });
+  el.innerHTML = h;
+  el.querySelector('.active')?.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+
+function removeTrack(i) {
+  if (i === cur) {
+    audio.pause();
+    playing = false;
+    cur = -1;
+    syncCtl();
+  } else if (i < cur) {
+    cur--;
+  }
+  URL.revokeObjectURL(playlist[i].url);
+  if (playlist[i].art) URL.revokeObjectURL(playlist[i].art);
+  playlist.splice(i,1);
+  renderList();
+  setSt(`${playlist.length} track${playlist.length!==1?'s':''} in library`);
+}
+
+function clearAll() {
+  audio.pause();
+  playing = false; cur = -1;
+  playlist.forEach(t => { URL.revokeObjectURL(t.url); if(t.art) URL.revokeObjectURL(t.art); });
+  playlist = [];
+  renderList();
+  setInfo('—','Add songs to begin');
+  syncCtl();
+  resetArt();
+  setSt('Ready');
+}
+
+// ── PLAYBACK ───────────────────────────────────────────────────────────
+function selectTrack(i) {
+  if (i<0 || i>=playlist.length) return;
+  cur = i;
+  const t = playlist[i];
+  audio.src = t.url;
+  audio.play().then(() => {
+    playing = true;
+    setInfo(t.name, t.artist);
+    setArt(t.art);
+    enableCtl();
+    syncCtl();
+    startTimer();
+    setSt('', true);
+  }).catch(err => {
+    console.error('Play error:', err);
+    setSt('Could not play this file');
+  });
+  renderList();
+}
+
+function doPlay() {
+  if (cur === -1) { if (playlist.length) selectTrack(0); return; }
+  if (playing) { audio.pause(); playing=false; }
+  else { audio.play(); playing=true; }
+  syncCtl();
+}
+
+function doNext() {
+  if (!playlist.length) return;
+  let n;
+  if (shuffleOn) {
+    const pool = playlist.map((_,i)=>i).filter(i=>i!==cur);
+    n = pool.length ? pool[Math.floor(Math.random()*pool.length)] : 0;
+  } else {
+    n = (cur+1) % playlist.length;
+  }
+  selectTrack(n);
+}
+
+function doPrev() {
+  if (!playlist.length) return;
+  if (audio.currentTime > 4) { audio.currentTime = 0; return; }
+  selectTrack(cur<=0 ? playlist.length-1 : cur-1);
+}
+
+function doShuffle() {
+  shuffleOn = !shuffleOn;
+  document.getElementById('bShuffle').classList.toggle('on', shuffleOn);
+}
+
+function doRepeat() {
+  repeat = (repeat+1)%3;
+  const el = document.getElementById('bRepeat');
+  el.textContent = ['↻','↻¹','↩'][repeat];
+  el.classList.toggle('on', repeat>0);
+}
+
+audio.addEventListener('ended', () => {
+  playing = false; syncCtl();
+  if (repeat===2) { audio.currentTime=0; audio.play(); playing=true; syncCtl(); return; }
+  if (repeat===1 || cur < playlist.length-1) doNext();
+});
+
+audio.addEventListener('pause', () => { if(playing){playing=false;syncCtl();} });
+audio.addEventListener('play',  () => { if(!playing){playing=true;syncCtl();} });
+
+function onSeek(e) {
+  if (!audio.duration) return;
+  const r = document.getElementById('pbar').getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX-r.left)/r.width));
+  audio.currentTime = pct * audio.duration;
+}
+
+// ── VOLUME ─────────────────────────────────────────────────────────────
+let vDragging = false;
+function setVol(pct) {
+  pct = Math.max(0, Math.min(1, pct));
+  vol = Math.round(pct*100);
+  document.getElementById('vfill').style.width = (pct*100)+'%';
+  document.getElementById('vthumb').style.left = (pct*100)+'%';
+  document.getElementById('vIco').textContent = vol===0?'🔇':vol<40?'🔈':'🔊';
+  audio.volume = pct;
+}
+const vbar = document.getElementById('vbar');
+function vbarPct(x){ const r=vbar.getBoundingClientRect(); return (x-r.left)/r.width; }
+vbar.addEventListener('mousedown', e=>{vDragging=true;setVol(vbarPct(e.clientX));});
+document.addEventListener('mousemove', e=>{if(vDragging)setVol(vbarPct(e.clientX));});
+document.addEventListener('mouseup', ()=>{vDragging=false;});
+vbar.addEventListener('touchstart', e=>{vDragging=true;setVol(vbarPct(e.touches[0].clientX));},{passive:true});
+document.addEventListener('touchmove', e=>{if(vDragging)setVol(vbarPct(e.touches[0].clientX));},{passive:true});
+document.addEventListener('touchend', ()=>{vDragging=false;});
+setVol(0.8);
+
+// ── PROGRESS TIMER ─────────────────────────────────────────────────────
+function startTimer() {
+  clearInterval(ptimer);
+  ptimer = setInterval(() => {
+    if (!audio.duration) return;
+    document.getElementById('pfill').style.width = ((audio.currentTime/audio.duration)*100)+'%';
+    document.getElementById('tElap').textContent = fmt(audio.currentTime);
+    document.getElementById('tDur').textContent  = fmt(audio.duration);
+  }, 250);
+}
+function fmt(s){ s=Math.floor(s||0); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+
+// ── ART + COLOR ────────────────────────────────────────────────────────
+function setArt(url) {
+  const img = document.getElementById('artImg');
+  const ph = document.getElementById('discPh');
+  if (!url) { resetArt(); return; }
+  img.onload = () => { img.style.display='block'; ph.style.display='none'; extractColor(img); };
+  img.onerror = () => resetArt();
+  img.src = url;
+}
+function resetArt() {
+  document.getElementById('artImg').style.display='none';
+  document.getElementById('discPh').style.display='flex';
+  lastAlbumColor = { r:28, g:28, b:42 };
+  if (discMode === 'auto') applyColor(28,28,42);
+}
+function extractColor(img) {
+  try {
+    const c=document.createElement('canvas'); c.width=c.height=50;
+    const ctx=c.getContext('2d'); ctx.drawImage(img,0,0,50,50);
+    const d=ctx.getImageData(0,0,50,50).data;
+    let r=0,g=0,b=0,n=0;
+    for(let i=0;i<d.length;i+=8){r+=d[i];g+=d[i+1];b+=d[i+2];n++;}
+    const rr=Math.floor(r/n), gg=Math.floor(g/n), bb=Math.floor(b/n);
+    lastAlbumColor = { r:rr, g:gg, b:bb };
+    if (discMode === 'auto') applyColor(rr,gg,bb);
+  } catch(e){
+    lastAlbumColor = { r:28, g:28, b:42 };
+    if (discMode === 'auto') applyColor(28,28,42);
+  }
+}
+function applyColor(r,g,b) {
+  const dk=0.2,md=0.3,lt=0.46;
+  const dr=Math.floor(r*dk),dg=Math.floor(g*dk),db=Math.floor(b*dk);
+  const mr=Math.floor(r*md),mg=Math.floor(g*md),mb=Math.floor(b*md);
+  const lr=Math.min(255,Math.floor(r*lt)),lg=Math.min(255,Math.floor(g*lt)),lb=Math.min(255,Math.floor(b*lt));
+  document.getElementById('discVinyl').style.background =
+    `radial-gradient(circle at 40% 33%,rgb(${lr},${lg},${lb}) 0%,rgb(${mr},${mg},${mb}) 28%,rgb(${dr},${dg},${db}) 55%,rgb(${mr},${mg},${mb}) 80%,rgb(${lr},${lg},${lb}) 100%)`;
+  document.getElementById('bgGlow').style.background =
+    `radial-gradient(circle,rgba(${mr},${mg},${mb},0.5) 0%,transparent 70%)`;
+  document.getElementById('discLabel').style.boxShadow =
+    `0 0 0 2px rgba(255,255,255,0.055),0 0 0 6px rgba(${lr},${lg},${lb},0.07),0 6px 28px rgba(0,0,0,0.6)`;
+  // waveform bars pick up the brighter disc tone
+  document.documentElement.style.setProperty('--wf-color', `rgb(${lr},${lg},${lb})`);
+}
+
+// ── UI SYNC ────────────────────────────────────────────────────────────
+function syncCtl() {
+  document.getElementById('disc').classList.toggle('playing', playing);
+  document.getElementById('arm').classList.toggle('down', playing);
+  document.getElementById('bPlay').textContent = playing ? '⏸' : '▶';
+  document.getElementById('waveform').classList.toggle('playing', playing);
+}
+
+// build waveform bars once — heights randomized so the pulse looks organic
+const WF_BAR_COUNT = 40;
+function buildWaveform() {
+  const wf = document.getElementById('waveform');
+  let html = '';
+  for (let i=0;i<WF_BAR_COUNT;i++) {
+    const h = 10 + Math.round(Math.random()*26);
+    const delay = (Math.random()*1.1).toFixed(2);
+    const dur = (0.8 + Math.random()*0.6).toFixed(2);
+    html += `<div class="wf-bar" style="--wf-h:${h}px;animation-delay:${delay}s;animation-duration:${dur}s"></div>`;
+  }
+  wf.innerHTML = html;
+}
+buildWaveform();
+
+// ── CLOCK ──────────────────────────────────────────────────────────────
+function tickClock() {
+  const now = new Date();
+  let h = now.getHours();
+  const m = String(now.getMinutes()).padStart(2,'0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  document.getElementById('clockTime').textContent = `${h}:${m} ${ampm}`;
+  const days = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  document.getElementById('clockDate').textContent = `${days[now.getDay()]} ${months[now.getMonth()]} ${now.getDate()}`;
+}
+tickClock();
+setInterval(tickClock, 1000);
+
+function enableCtl() {
+  ['bPrev','bPlay','bNext'].forEach(id=>document.getElementById(id).disabled=false);
+  document.getElementById('sProg').classList.add('active');
+}
+function setInfo(t,a) {
+  document.getElementById('sTrack').textContent = t;
+  document.getElementById('sArtist').textContent = a;
+}
+function setSt(msg, live) {
+  document.getElementById('statusTxt').textContent = msg || (cur>=0 ? playlist[cur].name : 'Ready');
+  document.getElementById('statusEl').classList.toggle('live', !!live);
+}
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── KEYBOARD ───────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code==='Space'){e.preventDefault();doPlay();}
+  if (e.code==='ArrowRight') doNext();
+  if (e.code==='ArrowLeft') doPrev();
+  if (e.code==='ArrowUp'){e.preventDefault();setVol(vol/100+0.05);}
+  if (e.code==='ArrowDown'){e.preventDefault();setVol(vol/100-0.05);}
+});
+</script>
+</body>
+</html>

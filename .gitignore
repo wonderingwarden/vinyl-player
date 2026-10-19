@@ -1,0 +1,25 @@
+# OS/editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Logs and temporary files
+*.log
+.tmp/
+temp/
+
+# Dependencies/build output (if added in future)
+node_modules/
+dist/
+build/
+
+# Local media files — do not commit personal audio
+*.mp3
+*.wav
+*.m4a
+*.flac
+*.ogg
+*.aac
